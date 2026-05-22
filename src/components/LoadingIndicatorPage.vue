@@ -1,21 +1,23 @@
 <template>
-    <div v-if="!showContent" class="min-h-[75vh] w-full flex items-center justify-center">
+    <div v-if="!showContent" class="grid min-h-[75vh] w-full place-items-center">
         <span id="spinner" />
     </div>
-    <div v-else>
+    <div v-else v-bind="$attrs">
         <slot />
     </div>
 </template>
 
-<script>
-export default {
-    props: {
-        showContent: {
-            type: Boolean,
-            required: true,
-        },
+<script setup>
+defineOptions({
+    inheritAttrs: false,
+});
+
+defineProps({
+    showContent: {
+        type: Boolean,
+        required: true,
     },
-};
+});
 </script>
 
 <style>
@@ -31,6 +33,7 @@ export default {
     display: inline-block;
     width: 70px;
     height: 70px;
+    margin-inline: auto;
 }
 #spinner:after {
     content: " ";

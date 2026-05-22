@@ -154,7 +154,7 @@
         "add_to_group": "Lisa gruppi",
         "instance_privacy_policy": "Andmekaitsepõhimõtted",
         "customize": "Kohanda",
-        "invalid_url": "Vigane URL!",
+        "invalid_url": "Vigane võrguaadress!",
         "add": "Lisa",
         "delete_group_confirm": "Kas kustutame selle grupi?",
         "creator_replied": "Autor vastas",
@@ -172,7 +172,12 @@
         "export": "Ekspordi",
         "never": "Mitte kunagi",
         "playlists_only": "Vaid esitusloendid",
-        "always": "Alati"
+        "always": "Alati",
+        "clear": "Tühjenda",
+        "show_password": "Näita salasõna",
+        "hide_password": "Peida salasõna",
+        "rss_feed": "RSS-uudisvoog",
+        "playlist_rss_feed": "Esitusloendi RSS-uudisvoog"
     },
     "preferences": {
         "has_cdn": "CDN'i olek?",

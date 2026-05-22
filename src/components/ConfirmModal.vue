@@ -2,41 +2,47 @@
     <ModalComponent @close="$emit('close')">
         <div>
             <h3 class="text-xl" v-text="message" />
-            <div class="ml-auto mt-8 w-min flex gap-2">
-                <button v-t="'actions.cancel'" class="btn" @click="$emit('close')" />
-                <button v-t="'actions.okay'" class="btn" @click="$emit('confirm')" />
+            <div class="mt-8 ml-auto flex w-min gap-2">
+                <button
+                    v-t="'actions.cancel'"
+                    class="inline-block w-auto cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
+                    @click="$emit('close')"
+                />
+                <button
+                    v-t="'actions.okay'"
+                    class="inline-block w-auto cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
+                    @click="$emit('confirm')"
+                />
             </div>
         </div>
     </ModalComponent>
 </template>
 
-<script>
+<script setup>
+import { onMounted, onUnmounted } from "vue";
 import ModalComponent from "./ModalComponent.vue";
 
-export default {
-    components: {
-        ModalComponent,
+defineProps({
+    message: {
+        type: String,
+        required: true,
     },
-    props: {
-        message: {
-            type: String,
-            required: true,
-        },
-    },
-    emits: ["close", "confirm"],
-    mounted() {
-        window.addEventListener("keydown", this.handleKeyDown);
-    },
-    unmounted() {
-        window.removeEventListener("keydown", this.handleKeyDown);
-    },
-    methods: {
-        handleKeyDown(event) {
-            if (event.code === "Enter") {
-                this.$emit("confirm");
-                event.preventDefault();
-            }
-        },
-    },
-};
+});
+
+const emit = defineEmits(["close", "confirm"]);
+
+function handleKeyDown(event) {
+    if (event.code === "Enter") {
+        emit("confirm");
+        event.preventDefault();
+    }
+}
+
+onMounted(() => {
+    window.addEventListener("keydown", handleKeyDown);
+});
+
+onUnmounted(() => {
+    window.removeEventListener("keydown", handleKeyDown);
+});
 </script>

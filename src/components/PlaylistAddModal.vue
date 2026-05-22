@@ -1,20 +1,23 @@
 <template>
     <ModalComponent @close="$emit('close')">
         <span v-t="'actions.select_playlist'" class="inline-block w-max text-2xl" />
-        <select v-model="selectedPlaylist" class="select mt-3 w-full">
+        <select
+            v-model="selectedPlaylist"
+            class="mt-3 h-8 w-full rounded-md bg-gray-300 px-2.5 text-gray-600 dark:bg-dark-400 dark:text-gray-400"
+        >
             <option v-for="playlist in playlists" :key="playlist.id" :value="playlist.id" v-text="playlist.name" />
         </select>
-        <div class="mt-3 w-full flex justify-between">
+        <div class="mt-3 flex w-full justify-between">
             <button
                 ref="addButton"
                 v-t="'actions.create_playlist'"
-                class="btn"
+                class="inline-block w-auto cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
                 @click="showCreatePlaylistModal = true"
             />
             <button
                 ref="addButton"
                 v-t="'actions.add_to_playlist'"
-                class="btn"
+                class="inline-block w-auto cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
                 @click="handleClick(selectedPlaylist)"
             />
         </div>
@@ -26,73 +29,76 @@
     />
 </template>
 
-<script>
+<script setup>
+import { ref, onMounted, onUnmounted } from "vue";
+import { useI18n } from "vue-i18n";
 import ModalComponent from "./ModalComponent.vue";
 import CreatePlaylistModal from "./CreatePlaylistModal.vue";
+import { getPlaylists, addVideosToPlaylist } from "@/composables/usePlaylists.js";
+import { getPreferenceString, setPreference } from "@/composables/usePreferences.js";
+import { authApiUrl, hashCode } from "@/composables/useApi.js";
 
-export default {
-    components: {
-        ModalComponent,
-        CreatePlaylistModal,
-    },
-    props: {
-        videoInfo: {
-            type: Object,
-            required: true,
-        },
-        videoId: {
-            type: String,
-            required: true,
-        },
-    },
-    emits: ["close"],
-    data() {
-        return {
-            playlists: [],
-            selectedPlaylist: null,
-            processing: false,
-            showCreatePlaylistModal: false,
-        };
-    },
-    mounted() {
-        this.getPlaylists().then(json => {
-            this.playlists = json;
-        });
-        this.selectedPlaylist = this.getPreferenceString("selectedPlaylist" + this.hashCode(this.authApiUrl()));
-        window.addEventListener("keydown", this.handleKeyDown);
-        window.blur();
-    },
-    unmounted() {
-        window.removeEventListener("keydown", this.handleKeyDown);
-    },
-    methods: {
-        handleKeyDown(event) {
-            if (event.code === "Enter" && !this.showCreatePlaylistModal) {
-                this.handleClick(this.selectedPlaylist);
-                event.preventDefault();
-            }
-        },
-        handleClick(playlistId) {
-            if (!playlistId) {
-                alert(this.$t("actions.please_select_playlist"));
-                return;
-            }
+const { t } = useI18n();
 
-            if (this.processing) return;
-
-            this.$refs.addButton.disabled = true;
-            this.processing = true;
-
-            this.addVideosToPlaylist(playlistId, [this.videoId], [this.videoInfo]).then(json => {
-                this.setPreference("selectedPlaylist" + this.hashCode(this.authApiUrl()), playlistId);
-                this.$emit("close");
-                if (json.error) alert(json.error);
-            });
-        },
-        addCreatedPlaylist(playlistId, playlistName) {
-            this.playlists.push({ id: playlistId, name: playlistName });
-            this.selectedPlaylist = playlistId;
-        },
+const props = defineProps({
+    videoInfo: {
+        type: Object,
+        required: true,
     },
-};
+    videoId: {
+        type: String,
+        required: true,
+    },
+});
+
+const emit = defineEmits(["close"]);
+
+const addButton = ref(null);
+const playlists = ref([]);
+const selectedPlaylist = ref(null);
+const processing = ref(false);
+const showCreatePlaylistModal = ref(false);
+
+function handleKeyDown(event) {
+    if (event.code === "Enter" && !showCreatePlaylistModal.value) {
+        handleClick(selectedPlaylist.value);
+        event.preventDefault();
+    }
+}
+
+function handleClick(playlistId) {
+    if (!playlistId) {
+        alert(t("actions.please_select_playlist"));
+        return;
+    }
+
+    if (processing.value) return;
+
+    addButton.value.disabled = true;
+    processing.value = true;
+
+    addVideosToPlaylist(playlistId, [props.videoId], [props.videoInfo]).then(json => {
+        setPreference("selectedPlaylist" + hashCode(authApiUrl()), playlistId);
+        emit("close");
+        if (json.error) alert(json.error);
+    });
+}
+
+function addCreatedPlaylist(playlistId, playlistName) {
+    playlists.value.push({ id: playlistId, name: playlistName });
+    selectedPlaylist.value = playlistId;
+}
+
+onMounted(() => {
+    getPlaylists().then(json => {
+        playlists.value = json;
+    });
+    selectedPlaylist.value = getPreferenceString("selectedPlaylist" + hashCode(authApiUrl()));
+    window.addEventListener("keydown", handleKeyDown);
+    window.blur();
+});
+
+onUnmounted(() => {
+    window.removeEventListener("keydown", handleKeyDown);
+});
 </script>

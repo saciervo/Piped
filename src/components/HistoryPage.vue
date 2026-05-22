@@ -3,10 +3,22 @@
 
     <div class="flex justify-between">
         <div class="flex flex-col gap-2 md:flex-row md:items-center">
-            <button v-t="'actions.clear_history'" class="btn" @click="clearHistory" />
+            <button
+                v-t="'actions.clear_history'"
+                class="inline-block w-auto cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
+                @click="clearHistory"
+            />
 
-            <button v-t="'actions.export_history'" class="btn" @click="showExportModal = !showExportModal" />
-            <button v-t="'actions.import_history'" class="btn" @click="showImportModal = !showImportModal" />
+            <button
+                v-t="'actions.export_history'"
+                class="inline-block w-auto cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
+                @click="showExportModal = !showExportModal"
+            />
+            <button
+                v-t="'actions.import_history'"
+                class="inline-block w-auto cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
+                @click="showImportModal = !showImportModal"
+            />
         </div>
 
         <div class="flex items-center gap-1">
@@ -14,9 +26,13 @@
         </div>
 
         <div class="ml-4 flex items-center">
-            <input id="autoDelete" v-model="autoDeleteHistory" type="checkbox" @change="onChange" />
+            <UiCheckbox id="autoDelete" v-model="autoDeleteHistory" @change="onChange" />
             <label v-t="'actions.delete_automatically'" class="ml-2" for="autoDelete" />
-            <select v-model="autoDeleteDelayHours" class="select ml-3 pl-3" @change="onChange">
+            <select
+                v-model="autoDeleteDelayHours"
+                class="ml-3 h-8 rounded-md bg-gray-300 pl-3 text-gray-600 dark:bg-dark-400 dark:text-gray-400"
+                @change="onChange"
+            >
                 <option v-t="{ path: 'info.hours', args: { amount: '1' } }" value="1" />
                 <option v-t="{ path: 'info.hours', args: { amount: '3' } }" value="3" />
                 <option v-t="{ path: 'info.hours', args: { amount: '6' } }" value="6" />
@@ -33,7 +49,9 @@
 
     <hr />
 
-    <div class="video-grid">
+    <div
+        class="mx-2 grid grid-cols-1 gap-y-5 max-md:gap-x-3 sm:mx-0 sm:grid-cols-2 md:grid-cols-3 md:gap-x-6 lg:grid-cols-4 xl:grid-cols-5"
+    >
         <VideoItem v-for="video in videos" :key="video.url" :item="video" />
     </div>
 
@@ -42,107 +60,102 @@
     <ImportHistoryModal v-if="showImportModal" @close="showImportModal = false" />
 </template>
 
-<script>
+<script setup>
+import { ref, onMounted, onActivated, onDeactivated } from "vue";
 import VideoItem from "./VideoItem.vue";
 import SortingSelector from "./SortingSelector.vue";
 import ExportHistoryModal from "./ExportHistoryModal.vue";
 import ImportHistoryModal from "./ImportHistoryModal.vue";
+import UiCheckbox from "./ui/Checkbox.vue";
+import { getPreferenceBoolean, getPreferenceString, setPreference } from "@/composables/usePreferences.js";
 
-export default {
-    components: {
-        VideoItem,
-        SortingSelector,
-        ExportHistoryModal,
-        ImportHistoryModal,
-    },
-    data() {
-        return {
-            currentVideoCount: 0,
-            videoStep: 100,
-            videosStore: [],
-            videos: [],
-            autoDeleteHistory: false,
-            autoDeleteDelayHours: "24",
-            showExportModal: false,
-            showImportModal: false,
-        };
-    },
-    mounted() {
-        this.autoDeleteHistory = this.getPreferenceBoolean("autoDeleteWatchHistory", false);
-        this.autoDeleteDelayHours = this.getPreferenceString("autoDeleteWatchHistoryDelayHours", "24");
+let currentVideoCount = 0;
+const videoStep = 100;
+const videosStore = [];
+const videos = ref([]);
+const autoDeleteHistory = ref(false);
+const autoDeleteDelayHours = ref("24");
+const showExportModal = ref(false);
+const showImportModal = ref(false);
 
-        (async () => {
-            if (window.db && this.getPreferenceBoolean("watchHistory", false)) {
-                var tx = window.db.transaction("watch_history", "readwrite");
-                var store = tx.objectStore("watch_history");
-                const cursorRequest = store.index("watchedAt").openCursor(null, "prev");
-                const cursorPromise = new Promise(resolve => {
-                    cursorRequest.onsuccess = e => {
-                        const cursor = e.target.result;
-                        if (cursor) {
-                            const video = cursor.value;
-                            if (!this.shouldRemoveVideo(video)) {
-                                this.videosStore.push({
-                                    url: "/watch?v=" + video.videoId,
-                                    title: video.title,
-                                    uploaderName: video.uploaderName,
-                                    uploaderUrl: video.uploaderUrl ?? "", // Router doesn't like undefined
-                                    duration: video.duration ?? 0, // Undefined duration shows "Live"
-                                    thumbnail: video.thumbnail,
-                                    watchedAt: video.watchedAt,
-                                    watched: true,
-                                    currentTime: video.currentTime,
-                                });
-                            } else {
-                                store.delete(video.videoId);
-                            }
-                            if (this.videosStore.length < 1000) cursor.continue();
-                            else resolve();
-                        } else resolve();
-                    };
-                });
-                await cursorPromise;
-            }
-        })().then(() => {
-            this.loadMoreVideos();
-        });
-    },
-    activated() {
-        document.title = "Watch History - Piped";
-        window.addEventListener("scroll", this.handleScroll);
-    },
-    deactivated() {
-        window.removeEventListener("scroll", this.handleScroll);
-    },
-    methods: {
-        clearHistory() {
-            if (window.db) {
-                var tx = window.db.transaction("watch_history", "readwrite");
-                var store = tx.objectStore("watch_history");
-                store.clear();
-            }
-            this.videos = [];
-        },
-        onChange() {
-            this.setPreference("autoDeleteWatchHistory", this.autoDeleteHistory);
-            this.setPreference("autoDeleteWatchHistoryDelayHours", this.autoDeleteDelayHours);
-        },
-        shouldRemoveVideo(video) {
-            if (!this.autoDeleteHistory) return false;
-            // convert from hours to milliseconds
-            let maximumTimeDiff = Number(this.autoDeleteDelayHours) * 60 * 60 * 1000;
-            return Date.now() - video.watchedAt > maximumTimeDiff;
-        },
-        loadMoreVideos() {
-            this.currentVideoCount = Math.min(this.currentVideoCount + this.videoStep, this.videosStore.length);
-            if (this.videos.length != this.videosStore.length)
-                this.videos = this.videosStore.slice(0, this.currentVideoCount);
-        },
-        handleScroll() {
-            if (window.innerHeight + window.scrollY >= document.body.offsetHeight - window.innerHeight) {
-                this.loadMoreVideos();
-            }
-        },
-    },
-};
+function shouldRemoveVideo(video) {
+    if (!autoDeleteHistory.value) return false;
+    let maximumTimeDiff = Number(autoDeleteDelayHours.value) * 60 * 60 * 1000;
+    return Date.now() - video.watchedAt > maximumTimeDiff;
+}
+
+function loadMoreVideos() {
+    currentVideoCount = Math.min(currentVideoCount + videoStep, videosStore.length);
+    if (videos.value.length != videosStore.length) videos.value = videosStore.slice(0, currentVideoCount);
+}
+
+function handleScroll() {
+    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - window.innerHeight) {
+        loadMoreVideos();
+    }
+}
+
+function clearHistory() {
+    if (window.db) {
+        var tx = window.db.transaction("watch_history", "readwrite");
+        var store = tx.objectStore("watch_history");
+        store.clear();
+    }
+    videos.value = [];
+}
+
+function onChange() {
+    setPreference("autoDeleteWatchHistory", autoDeleteHistory.value);
+    setPreference("autoDeleteWatchHistoryDelayHours", autoDeleteDelayHours.value);
+}
+
+onMounted(() => {
+    autoDeleteHistory.value = getPreferenceBoolean("autoDeleteWatchHistory", false);
+    autoDeleteDelayHours.value = getPreferenceString("autoDeleteWatchHistoryDelayHours", "24");
+
+    (async () => {
+        if (window.db && getPreferenceBoolean("watchHistory", false)) {
+            var tx = window.db.transaction("watch_history", "readwrite");
+            var store = tx.objectStore("watch_history");
+            const cursorRequest = store.index("watchedAt").openCursor(null, "prev");
+            const cursorPromise = new Promise(resolve => {
+                cursorRequest.onsuccess = e => {
+                    const cursor = e.target.result;
+                    if (cursor) {
+                        const video = cursor.value;
+                        if (!shouldRemoveVideo(video)) {
+                            videosStore.push({
+                                url: "/watch?v=" + video.videoId,
+                                title: video.title,
+                                uploaderName: video.uploaderName,
+                                uploaderUrl: video.uploaderUrl ?? "",
+                                duration: video.duration ?? 0,
+                                thumbnail: video.thumbnail,
+                                watchedAt: video.watchedAt,
+                                watched: true,
+                                currentTime: video.currentTime,
+                            });
+                        } else {
+                            store.delete(video.videoId);
+                        }
+                        if (videosStore.length < 1000) cursor.continue();
+                        else resolve();
+                    } else resolve();
+                };
+            });
+            await cursorPromise;
+        }
+    })().then(() => {
+        loadMoreVideos();
+    });
+});
+
+onActivated(() => {
+    document.title = "Watch History - Piped";
+    window.addEventListener("scroll", handleScroll);
+});
+
+onDeactivated(() => {
+    window.removeEventListener("scroll", handleScroll);
+});
 </script>
