@@ -2,8 +2,8 @@
     <div
         ref="container"
         data-shaka-player-container
-        class="relative max-h-screen w-full flex justify-center"
-        :class="{ 'player-container': !isEmbed }"
+        class="relative flex max-h-screen w-full justify-center"
+        :class="{ 'max-h-[75vh] min-h-64 bg-black': !isEmbed }"
     >
         <video
             ref="videoEl"
@@ -13,23 +13,6 @@
             :loop="selectedAutoLoop"
             playsinline
         />
-        <span
-            id="preview-container"
-            ref="previewContainer"
-            class="absolute bottom-0 z-[2000] mb-[3.5%] hidden flex-col items-center"
-        >
-            <canvas id="preview" ref="preview" class="rounded-sm" />
-            <span
-                v-if="(video?.chapters?.length ?? 0) > 1"
-                class="mt-2 text-sm drop-shadow-[0_0_2px_white] -mb-2 .dark:drop-shadow-[0_0_2px_black]"
-            >
-                {{ video.chapters.findLast(chapter => chapter.start < currentTime)?.title }}
-            </span>
-            <span
-                class="mt-2 w-min rounded-xl bg-white px-2 pb-1 pt-1.5 text-sm .dark:bg-dark-700"
-                v-text="timeFormat(currentTime)"
-            />
-        </span>
         <button
             v-if="inSegment"
             class="skip-segment-button"
@@ -39,27 +22,27 @@
             @click="onClickSkipSegment"
         >
             <span v-t="'actions.skip_segment'" />
-            <i class="material-icons-round">skip_next</i>
+            <i-fa6-solid-forward-step class="skip-segment-icon" aria-hidden="true" />
         </button>
         <span
             v-if="error > 0"
             v-t="{ path: 'player.failed', args: [error] }"
-            class="absolute top-8 rounded bg-black/80 p-2 text-lg backdrop-blur-sm"
+            class="absolute top-8 rounded-sm bg-black/80 p-2 text-lg backdrop-blur-sm"
         />
         <div
             v-if="showCurrentSpeed"
-            class="text-l absolute left-1/2 top-1/2 flex flex-col transform items-center gap-6 rounded-8 bg-white/80 px-8 py-4 -translate-x-1/2 -translate-y-1/2 .dark:bg-dark-700/80"
+            class="absolute top-1/2 left-1/2 flex -translate-1/2 transform flex-col items-center gap-6 rounded-4xl bg-white/80 px-8 py-4 text-lg dark:bg-dark-700/80"
         >
-            <i class="i-fa6-solid:gauge-high h-25 w-25 p-5" />
-            <span v-text="$refs.videoEl.playbackRate" />
+            <i-fa6-solid-gauge-high class="size-25 p-5" />
+            <span v-text="videoEl.playbackRate" />
         </div>
         <div
             v-if="showCurrentVolume"
-            class="text-l absolute left-1/2 top-1/2 flex flex-col transform items-center gap-6 rounded-8 bg-white/80 px-8 py-4 -translate-x-1/2 -translate-y-1/2 .dark:bg-dark-700/80"
+            class="absolute top-1/2 left-1/2 flex -translate-1/2 transform flex-col items-center gap-6 rounded-4xl bg-white/80 px-8 py-4 text-lg dark:bg-dark-700/80"
         >
-            <i v-if="$refs.videoEl.volume > 0" class="i-fa6-solid:volume-high h-25 w-25 p-5" />
-            <i v-else class="i-fa6-solid:volume-xmark h-25 w-25 p-5" />
-            <span v-text="Math.round($refs.videoEl.volume * 100) / 100" />
+            <i-fa6-solid-volume-high v-if="videoEl.volume > 0" class="size-25 p-5" />
+            <i-fa6-solid-volume-xmark v-else class="size-25 p-5" />
+            <span v-text="Math.round(videoEl.volume * 100) / 100" />
         </div>
     </div>
 
@@ -68,933 +51,925 @@
         <div class="flex flex-col">
             <input
                 v-model="playbackSpeedInput"
-                class="input my-3"
+                class="my-3 h-8 w-auto rounded-md bg-gray-300 px-2.5 text-gray-600 focus:shadow-red-400 focus:outline-2 focus:outline-red-500 dark:bg-dark-400 dark:text-gray-400"
                 type="text"
                 :placeholder="$t('actions.playback_speed')"
                 @keyup.enter="setSpeedFromInput()"
             />
-            <button v-t="'actions.okay'" class="btn ml-auto w-min" @click="setSpeedFromInput()" />
+            <button
+                v-t="'actions.okay'"
+                class="ml-auto inline-block w-min cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
+                @click="setSpeedFromInput()"
+            />
         </div>
     </ModalComponent>
 </template>
 
-<script>
+<script setup>
 import "shaka-player/dist/controls.css";
+import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted } from "vue";
+import { useRoute } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { parseTimeParam } from "@/utils/Misc";
 import ModalComponent from "./ModalComponent.vue";
+import {
+    getPreferenceBoolean,
+    getPreferenceNumber,
+    getPreferenceString,
+    setPreference,
+} from "@/composables/usePreferences.js";
+const shakaImport = import("shaka-player/dist/shaka-player.ui.js");
+const hotkeysImport = import("hotkeys-js");
 
-const shaka = import("shaka-player/dist/shaka-player.ui.js");
-const hotkeys = import("hotkeys-js");
+const route = useRoute();
+const { t } = useI18n();
 
-export default {
-    components: { ModalComponent },
-    props: {
-        video: {
-            type: Object,
-            default: () => {
-                return {};
-            },
-        },
-        sponsors: {
-            type: Object,
-            default: () => {
-                return {};
-            },
-        },
-        selectedAutoPlay: Boolean,
-        selectedAutoLoop: Boolean,
-        isEmbed: Boolean,
-    },
-    emits: ["timeupdate", "ended", "navigateNext"],
-    data() {
-        return {
-            lastUpdate: new Date().getTime(),
-            initialSeekComplete: false,
-            destroying: false,
-            inSegment: false,
-            isHoveringTimebar: false,
-            showSpeedModal: false,
-            showCurrentSpeed: false,
-            hideCurrentSpeed: null,
-            showCurrentVolume: false,
-            hideCurrentVolume: null,
-            playbackSpeedInput: null,
-            currentTime: 0,
-            seekbarPadding: 2,
-            error: 0,
-        };
-    },
-    computed: {
-        shouldAutoPlay: _this => {
-            return _this.getPreferenceBoolean("playerAutoPlay", true) && !_this.isEmbed;
-        },
-        preferredVideoCodecs: _this => {
-            var preferredVideoCodecs = [];
-            const enabledCodecs = _this.getPreferenceString("enabledCodecs", "vp9,avc").split(",");
-
-            if (
-                _this.$refs.videoEl.canPlayType('video/mp4; codecs="av01.0.08M.08"') !== "" &&
-                enabledCodecs.includes("av1")
-            )
-                preferredVideoCodecs.push("av01");
-            if (_this.$refs.videoEl.canPlayType('video/webm; codecs="vp9"') !== "" && enabledCodecs.includes("vp9"))
-                preferredVideoCodecs.push("vp9");
-            if (
-                _this.$refs.videoEl.canPlayType('video/mp4; codecs="avc1.4d401f"') !== "" &&
-                enabledCodecs.includes("avc")
-            )
-                preferredVideoCodecs.push("avc1");
-
-            return preferredVideoCodecs;
+const props = defineProps({
+    video: {
+        type: Object,
+        default: () => {
+            return {};
         },
     },
-    mounted() {
-        if (!this.$shaka) this.shakaPromise = shaka.then(shaka => shaka.default).then(shaka => (this.$shaka = shaka));
-        if (!this.$hotkeys)
-            this.hotkeysPromise = hotkeys.then(mod => mod.default).then(hotkeys => (this.$hotkeys = hotkeys));
+    sponsors: {
+        type: Object,
+        default: () => {
+            return {};
+        },
     },
-    activated() {
-        this.destroying = false;
-        this.sponsors?.segments?.forEach(segment => (segment.skipped = false));
-        this.hotkeysPromise.then(() => {
-            var self = this;
-            this.$hotkeys(
-                "f,m,j,k,l,c,space,up,down,left,right,ctrl+left,ctrl+right,home,end,0,1,2,3,4,5,6,7,8,9,shift+n,shift+s,shift+,,shift+.,alt+p,return,.,,",
-                function (e, handler) {
-                    const videoEl = self.$refs.videoEl;
-                    switch (handler.key) {
-                        case "f":
-                            self.$ui.getControls().toggleFullScreen();
-                            e.preventDefault();
-                            break;
-                        case "m":
-                            videoEl.muted = !videoEl.muted;
-                            e.preventDefault();
-                            break;
-                        case "j":
-                            videoEl.currentTime = Math.max(videoEl.currentTime - 15, 0);
-                            e.preventDefault();
-                            break;
-                        case "l":
-                            videoEl.currentTime = videoEl.currentTime + 15;
-                            e.preventDefault();
-                            break;
-                        case "c":
-                            self.$player.setTextTrackVisibility(!self.$player.isTextTrackVisible());
-                            e.preventDefault();
-                            break;
-                        case "k":
-                        case "space":
-                            if (videoEl.paused) videoEl.play();
-                            else videoEl.pause();
-                            e.preventDefault();
-                            break;
-                        case "up":
-                            self.adjustPlaybackVolume(videoEl.volume + 0.05);
-                            e.preventDefault();
-                            break;
-                        case "down":
-                            self.adjustPlaybackVolume(videoEl.volume - 0.05);
-                            e.preventDefault();
-                            break;
-                        case "left":
-                            videoEl.currentTime = Math.max(videoEl.currentTime - 5, 0);
-                            e.preventDefault();
-                            break;
-                        case "right":
-                            videoEl.currentTime = videoEl.currentTime + 5;
-                            e.preventDefault();
-                            break;
-                        case "ctrl+left": {
-                            videoEl.currentTime = self.video.chapters.findLast(
-                                chapter => chapter.start < videoEl.currentTime,
-                            ).start;
-                            e.preventDefault();
-                            break;
-                        }
-                        case "ctrl+right": {
-                            videoEl.currentTime =
-                                self.video.chapters.find(chapter => chapter.start > videoEl.currentTime)?.start ||
-                                videoEl.duration;
-                            e.preventDefault();
-                            break;
-                        }
-                        case "home":
-                            videoEl.currentTime = 0;
-                            e.preventDefault();
-                            break;
-                        case "end":
-                            videoEl.currentTime = videoEl.duration;
-                            e.preventDefault();
-                            break;
-                        case "0":
-                            videoEl.currentTime = 0;
-                            e.preventDefault();
-                            break;
-                        case "1":
-                            videoEl.currentTime = videoEl.duration * 0.1;
-                            e.preventDefault();
-                            break;
-                        case "2":
-                            videoEl.currentTime = videoEl.duration * 0.2;
-                            e.preventDefault();
-                            break;
-                        case "3":
-                            videoEl.currentTime = videoEl.duration * 0.3;
-                            e.preventDefault();
-                            break;
-                        case "4":
-                            videoEl.currentTime = videoEl.duration * 0.4;
-                            e.preventDefault();
-                            break;
-                        case "5":
-                            videoEl.currentTime = videoEl.duration * 0.5;
-                            e.preventDefault();
-                            break;
-                        case "6":
-                            videoEl.currentTime = videoEl.duration * 0.6;
-                            e.preventDefault();
-                            break;
-                        case "7":
-                            videoEl.currentTime = videoEl.duration * 0.7;
-                            e.preventDefault();
-                            break;
-                        case "8":
-                            videoEl.currentTime = videoEl.duration * 0.8;
-                            e.preventDefault();
-                            break;
-                        case "9":
-                            videoEl.currentTime = videoEl.duration * 0.9;
-                            e.preventDefault();
-                            break;
-                        case "shift+n":
-                            self.$emit("navigateNext");
-                            e.preventDefault();
-                            break;
-                        case "shift+s":
-                            self.showSpeedModal = true;
-                            break;
-                        case "shift+,":
-                            self.adjustPlaybackSpeed(videoEl.playbackRate - 0.25);
-                            break;
-                        case "shift+.":
-                            self.adjustPlaybackSpeed(videoEl.playbackRate + 0.25);
-                            break;
-                        case "alt+p":
-                            document.pictureInPictureElement
-                                ? document.exitPictureInPicture()
-                                : videoEl.requestPictureInPicture();
-                            break;
-                        case "return":
-                            self.skipSegment(videoEl);
-                            break;
-                        case ".":
-                            videoEl.currentTime += 0.04;
-                            e.preventDefault();
-                            break;
-                        case ",":
-                            videoEl.currentTime -= 0.04;
-                            e.preventDefault();
-                            break;
-                    }
-                },
-            );
+    selectedAutoPlay: Boolean,
+    selectedAutoLoop: Boolean,
+    isEmbed: Boolean,
+});
+
+const emit = defineEmits(["timeupdate", "ended", "navigateNext"]);
+
+const container = ref(null);
+const videoEl = ref(null);
+
+const lastUpdate = ref(new Date().getTime());
+const initialSeekComplete = ref(false);
+const destroying = ref(false);
+const inSegment = ref(false);
+const showSpeedModal = ref(false);
+const showCurrentSpeed = ref(false);
+let hideCurrentSpeedTimeout = null;
+const showCurrentVolume = ref(false);
+let hideCurrentVolumeTimeout = null;
+const playbackSpeedInput = ref(null);
+const error = ref(0);
+
+let shakaLib = null;
+let playerInstance = null;
+let uiInstance = null;
+let hotkeysLib = null;
+let shakaPromise = null;
+let hotkeysPromise = null;
+let lastSelectedTextTrack = null;
+let thumbnailVttUrl = null;
+
+const shouldAutoPlay = computed(() => {
+    return getPreferenceBoolean("playerAutoPlay", true) && !props.isEmbed;
+});
+
+const preferredVideoCodecs = computed(() => {
+    var preferredVideoCodecs = [];
+    const enabledCodecs = getPreferenceString("enabledCodecs", "vp9,avc").split(",");
+
+    if (videoEl.value.canPlayType('video/mp4; codecs="av01.0.08M.08"') !== "" && enabledCodecs.includes("av1"))
+        preferredVideoCodecs.push("av01");
+    if (videoEl.value.canPlayType('video/webm; codecs="vp9"') !== "" && enabledCodecs.includes("vp9"))
+        preferredVideoCodecs.push("vp9");
+    if (videoEl.value.canPlayType('video/mp4; codecs="avc1.4d401f"') !== "" && enabledCodecs.includes("avc"))
+        preferredVideoCodecs.push("avc1");
+
+    return preferredVideoCodecs;
+});
+
+function findCurrentSegment(time) {
+    return props.sponsors?.segments?.find(s => time >= s.segment[0] && time < s.segment[1]);
+}
+
+function onClickSkipSegment() {
+    skipSegment(videoEl.value);
+}
+
+function skipSegment(el, segment) {
+    const time = el.currentTime;
+    if (!segment) segment = findCurrentSegment(time);
+    if (!segment) return;
+    console.log("Skipped segment at " + time);
+    el.currentTime = segment.segment[1];
+    segment.skipped = true;
+}
+
+function adjustPlaybackSpeed(newSpeed) {
+    const normalizedSpeed = Math.min(4, Math.max(0.25, newSpeed));
+    playerInstance.trickPlay(normalizedSpeed);
+    if (hideCurrentSpeedTimeout) window.clearTimeout(hideCurrentSpeedTimeout);
+    showCurrentSpeed.value = false;
+    showCurrentSpeed.value = true;
+    hideCurrentSpeedTimeout = window.setTimeout(() => (showCurrentSpeed.value = false), 1500);
+}
+
+function adjustPlaybackVolume(newVolume) {
+    const normalizedVolume = Math.min(1, Math.max(0, newVolume));
+    videoEl.value.volume = normalizedVolume;
+    if (hideCurrentVolumeTimeout) window.clearTimeout(hideCurrentVolumeTimeout);
+    showCurrentVolume.value = false;
+    showCurrentVolume.value = true;
+    hideCurrentVolumeTimeout = window.setTimeout(() => (showCurrentVolume.value = false), 1500);
+}
+
+function setSpeedFromInput() {
+    try {
+        const newSpeed = Number(playbackSpeedInput.value);
+        adjustPlaybackSpeed(newSpeed);
+    } catch {
+        alert(t("actions.invalid_input"));
+    }
+    showSpeedModal.value = false;
+}
+
+function getActiveTextTrack() {
+    return playerInstance?.getTextTracks()?.find(track => track.active) ?? null;
+}
+
+function selectTextTrack(track) {
+    playerInstance.selectTextTrack(track ?? null);
+    if (track) {
+        lastSelectedTextTrack = track;
+    }
+}
+
+function applyPreferredTextTrack() {
+    const textTracks = playerInstance.getTextTracks();
+    const prefSubtitles = getPreferenceString("subtitles", "");
+    const autoDisplayCaptions = getPreferenceBoolean("autoDisplayCaptions", false);
+
+    let selectedTrack = null;
+
+    if (prefSubtitles !== "") {
+        selectedTrack = textTracks.find(textTrack => textTrack.language == prefSubtitles) ?? null;
+    }
+
+    if (!selectedTrack && autoDisplayCaptions) {
+        const prefLang = getPreferenceString("hl", "en").substr(0, 2);
+        selectedTrack = textTracks.find(textTrack => textTrack.language == prefLang) ?? textTracks[0] ?? null;
+    }
+
+    selectTextTrack(selectedTrack);
+}
+
+function updateMarkers() {
+    const markers = container.value.querySelector(".shaka-ad-markers");
+    const array = ["to right"];
+    props.sponsors?.segments?.forEach(segment => {
+        const start = (segment.segment[0] / props.video.duration) * 100;
+        const end = (segment.segment[1] / props.video.duration) * 100;
+
+        var color = [
+            "sponsor",
+            "selfpromo",
+            "interaction",
+            "poi_highlight",
+            "intro",
+            "outro",
+            "preview",
+            "filler",
+            "music_offtopic",
+        ].includes(segment.category)
+            ? `var(--spon-seg-${segment.category})`
+            : "var(--spon-seg-default)";
+
+        array.push(`transparent ${start}%`);
+        array.push(`${color} ${start}%`);
+        array.push(`${color} ${end}%`);
+        array.push(`transparent ${end}%`);
+    });
+
+    if (array.length <= 1) {
+        return;
+    }
+
+    if (markers) markers.style.background = `linear-gradient(${array.join(",")})`;
+}
+
+function updateSponsors() {
+    if (getPreferenceBoolean("showMarkers", true)) {
+        shakaPromise.then(() => {
+            updateMarkers();
         });
-    },
-    deactivated() {
-        this.destroying = true;
-        this.destroy(true);
-    },
-    unmounted() {
-        this.destroying = true;
-        this.destroy(true);
-    },
-    methods: {
-        async loadVideo() {
-            this.updateSponsors();
+    }
+}
 
-            const component = this;
-            const videoEl = this.$refs.videoEl;
+function getPreviewFramePage() {
+    const previewFrames = props.video.previewFrames;
+    if (!previewFrames) return null;
+    if (Array.isArray(previewFrames)) {
+        return previewFrames.findLast(Boolean) ?? previewFrames[previewFrames.length - 1] ?? null;
+    }
+    return previewFrames;
+}
 
-            videoEl.setAttribute("poster", this.video.thumbnailUrl);
+function formatVttTime(milliseconds) {
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const ms = Math.floor(milliseconds % 1000);
 
-            const noPrevPlayer = !this.$player;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
+        2,
+        "0",
+    )}.${String(ms).padStart(3, "0")}`;
+}
 
-            var streams = [];
+function buildThumbnailVtt(framePage) {
+    const totalCount =
+        framePage.totalCount ?? framePage.urls.length * framePage.framesPerPageX * framePage.framesPerPageY;
+    const framesPerPage = framePage.framesPerPageX * framePage.framesPerPageY;
 
-            streams.push(...this.video.audioStreams);
-            streams.push(...this.video.videoStreams);
+    let vtt = "WEBVTT\n\n";
 
-            const MseSupport = window.MediaSource !== undefined || window.ManagedMediaSource !== undefined;
+    for (let frameIndex = 0; frameIndex < totalCount; frameIndex++) {
+        const pageIndex = Math.floor(frameIndex / framesPerPage);
+        const frameIndexOnPage = frameIndex % framesPerPage;
+        const xIndex = frameIndexOnPage % framePage.framesPerPageX;
+        const yIndex = Math.floor(frameIndexOnPage / framePage.framesPerPageX);
+        const startTime = frameIndex * framePage.durationPerFrame;
+        const endTime = Math.min((frameIndex + 1) * framePage.durationPerFrame, props.video.duration * 1000);
 
-            const lbry = null;
+        vtt += `${formatVttTime(startTime)} --> ${formatVttTime(endTime)}\n`;
+        vtt += `${framePage.urls[pageIndex]}#xywh=${xIndex * framePage.frameWidth},${yIndex * framePage.frameHeight},${
+            framePage.frameWidth
+        },${framePage.frameHeight}\n\n`;
+    }
 
-            var uri;
-            var mime;
+    return vtt;
+}
 
-            if (this.video.livestream) {
-                uri = this.video.hls;
-                mime = "application/x-mpegURL";
-            } else if (
-                this.video.audioStreams.length > 0 &&
-                !lbry &&
-                MseSupport &&
-                !this.getPreferenceBoolean("preferHls", false)
-            ) {
-                if (!this.video.dash) {
-                    const dash = (await import("../utils/DashUtils.js")).generate_dash_file_from_formats(
-                        streams,
-                        this.video.duration,
-                    );
+async function setupThumbnailTrack() {
+    const framePage = getPreviewFramePage();
+    if (!framePage?.urls?.length) return;
 
-                    uri = "data:application/dash+xml;charset=utf-8;base64," + btoa(dash);
-                } else {
-                    const url = new URL(this.video.dash);
-                    url.searchParams.set("rewrite", false);
-                    uri = url.toString();
-                }
-                mime = "application/dash+xml";
-            } else if (lbry) {
-                uri = lbry.url;
-                if (this.getPreferenceBoolean("proxyLBRY", false)) {
-                    const url = new URL(uri);
-                    const proxyURL = new URL(this.video.proxyUrl);
-                    let proxyPath = proxyURL.pathname;
-                    if (proxyPath.lastIndexOf("/") === proxyPath.length - 1) {
-                        proxyPath = proxyPath.substring(0, proxyPath.length - 1);
+    if (thumbnailVttUrl) {
+        URL.revokeObjectURL(thumbnailVttUrl);
+        thumbnailVttUrl = null;
+    }
+
+    thumbnailVttUrl = URL.createObjectURL(new Blob([buildThumbnailVtt(framePage)], { type: "text/vtt" }));
+    await playerInstance.addThumbnailsTrack(thumbnailVttUrl, "text/vtt");
+}
+
+async function updateProgressDatabase(time) {
+    if (new Date().getTime() - lastUpdate.value < 500) return;
+    lastUpdate.value = new Date().getTime();
+
+    if (!initialSeekComplete.value || !props.video.id || !window.db) return;
+
+    var tx = window.db.transaction("watch_history", "readwrite");
+    var store = tx.objectStore("watch_history");
+    var request = store.get(props.video.id);
+    request.onsuccess = function (event) {
+        var video = event.target.result;
+        if (video) {
+            video.currentTime = time;
+            store.put(video);
+        }
+    };
+}
+
+function seek(time) {
+    if (videoEl.value) {
+        videoEl.value.currentTime = time;
+    }
+}
+
+async function setPlayerAttrs(localPlayer, el, uri, mime, shaka) {
+    const url = "/watch?v=" + props.video.id;
+
+    if (!uiInstance) {
+        destroy();
+        const OpenButton = class extends shaka.ui.Element {
+            constructor(parent, controls) {
+                super(parent, controls);
+
+                this.newTabButton_ = document.createElement("button");
+                this.newTabButton_.classList.add("shaka-cast-button");
+                this.newTabButton_.classList.add("shaka-tooltip");
+                this.newTabButton_.ariaPressed = "false";
+
+                this.newTabIcon_ = document.createElement("i");
+                this.newTabIcon_.classList.add("material-icons-round");
+                this.newTabIcon_.textContent = "launch";
+                this.newTabButton_.appendChild(this.newTabIcon_);
+
+                const label = document.createElement("label");
+                label.classList.add("shaka-overflow-button-label");
+                label.classList.add("shaka-overflow-menu-only");
+                this.newTabNameSpan_ = document.createElement("span");
+                this.newTabNameSpan_.innerText = "Open in new tab";
+                label.appendChild(this.newTabNameSpan_);
+
+                this.newTabButton_.appendChild(label);
+                this.parent.appendChild(this.newTabButton_);
+
+                this.eventManager.listen(this.newTabButton_, "click", () => {
+                    this.video.pause();
+                    window.open(url);
+                });
+            }
+        };
+
+        OpenButton.Factory = class {
+            create(rootElement, controls) {
+                return new OpenButton(rootElement, controls);
+            }
+        };
+
+        shaka.ui.OverflowMenu.registerElement("open_new_tab", new OpenButton.Factory());
+
+        uiInstance = new shaka.ui.Overlay(localPlayer, container.value, el);
+
+        const overflowMenuButtons = ["quality", "captions", "picture_in_picture", "playback_rate", "remote"];
+
+        if (props.isEmbed) {
+            overflowMenuButtons.push("open_new_tab");
+        }
+
+        const config = {
+            overflowMenuButtons: overflowMenuButtons,
+            seekBarColors: {
+                base: "var(--player-base)",
+                buffered: "var(--player-buffered)",
+                played: "var(--player-played)",
+            },
+        };
+
+        uiInstance.configure(config);
+    }
+
+    updateMarkers();
+
+    const event = new Event("playerInit");
+    window.dispatchEvent(event);
+
+    playerInstance = localPlayer;
+
+    const disableVideo = getPreferenceBoolean("listen", false) && !props.video.livestream;
+
+    const prefetchLimit = Math.min(Math.max(getPreferenceNumber("prefetchLimit", 2), 0), 10);
+
+    playerInstance.configure({
+        preferredVideoCodecs: preferredVideoCodecs.value,
+        preferredAudioCodecs: ["opus", "mp4a"],
+        manifest: {
+            disableVideo: disableVideo,
+        },
+        streaming: {
+            segmentPrefetchLimit: prefetchLimit,
+            retryParameters: {
+                maxAttempts: Infinity,
+                baseDelay: 250,
+                backoffFactor: 1.5,
+            },
+        },
+    });
+
+    const quality = getPreferenceNumber("quality", 0);
+    const qualityConds =
+        quality > 0 && (props.video.audioStreams.length > 0 || props.video.livestream) && !disableVideo;
+    if (qualityConds) playerInstance.configure("abr.enabled", false);
+
+    const time = route.query.t ?? route.query.start;
+
+    var startTime = 0;
+
+    if (time) {
+        startTime = parseTimeParam(time);
+        initialSeekComplete.value = true;
+    } else if (window.db && getPreferenceBoolean("watchHistory", false)) {
+        await new Promise(resolve => {
+            var tx = window.db.transaction("watch_history", "readonly");
+            var store = tx.objectStore("watch_history");
+            var request = store.get(props.video.id);
+            request.onsuccess = function (event) {
+                var video = event.target.result;
+                const currentTime = video?.currentTime;
+                if (currentTime) {
+                    if (currentTime < video.duration * 0.9) {
+                        startTime = currentTime;
                     }
+                }
+                resolve();
+            };
 
+            tx.oncomplete = () => {
+                initialSeekComplete.value = true;
+            };
+        });
+    } else {
+        initialSeekComplete.value = true;
+    }
+
+    playerInstance
+        .load(uri, startTime, mime)
+        .then(async () => {
+            let lang = "en";
+            const prefLang = getPreferenceString("hl", "en").substr(0, 2);
+            const audioTracks = playerInstance.getAudioTracks();
+            const audioLanguages = [...new Set(audioTracks.map(t => t.language))];
+            if (audioLanguages.includes(prefLang)) lang = prefLang;
+            const selectedTrack = audioTracks.find(t => t.language === lang);
+            if (selectedTrack) playerInstance.selectAudioTrack(selectedTrack);
+
+            if (audioLanguages.length > 1) {
+                const overflowMenuButtons = uiInstance.getConfiguration().overflowMenuButtons;
+                const newOverflowMenuButtons = [
+                    ...overflowMenuButtons.slice(0, 1),
+                    "language",
+                    ...overflowMenuButtons.slice(1),
+                ];
+                uiInstance.configure("overflowMenuButtons", newOverflowMenuButtons);
+            }
+
+            if (qualityConds) {
+                var leastDiff = Number.MAX_VALUE;
+                var bestStream = null;
+
+                var bestAudio = 0;
+
+                const tracks = playerInstance
+                    .getVariantTracks()
+                    .filter(track => track.language == lang || track.language == "und");
+
+                if (quality >= 480)
+                    tracks.forEach(track => {
+                        const audioBandwidth = track.audioBandwidth;
+                        if (audioBandwidth > bestAudio) bestAudio = audioBandwidth;
+                    });
+
+                tracks
+                    .sort((a, b) => a.bandwidth - b.bandwidth)
+                    .forEach(stream => {
+                        if (stream.audioBandwidth < bestAudio) return;
+
+                        const diff = Math.abs(quality - stream.height);
+                        if (diff < leastDiff) {
+                            leastDiff = diff;
+                            bestStream = stream;
+                        }
+                    });
+
+                playerInstance.selectVariantTrack(bestStream, true);
+            }
+
+            await Promise.all(
+                props.video.subtitles.map(subtitle => {
+                    return playerInstance.addTextTrackAsync(
+                        subtitle.url,
+                        subtitle.code,
+                        "subtitles",
+                        subtitle.mimeType,
+                        null,
+                        subtitle.name,
+                    );
+                }),
+            );
+            el.volume = getPreferenceNumber("volume", 1);
+            const rate = getPreferenceNumber("rate", 1);
+            el.playbackRate = rate;
+            el.defaultPlaybackRate = rate;
+
+            applyPreferredTextTrack();
+            await setupThumbnailTrack();
+        })
+        .catch(e => {
+            console.error(e);
+            error.value = e.code;
+        });
+
+    if (route.query.fullscreen === "true" && !uiInstance.getControls().isFullScreenEnabled())
+        uiInstance.getControls().toggleFullScreen();
+
+    const seekbar = container.value.querySelector(".shaka-seek-bar");
+    const array = ["to right"];
+    for (const chapter of props.video.chapters) {
+        const start = (chapter.start / props.video.duration) * 100;
+        if (start === 0) {
+            continue;
+        }
+        array.push(`transparent ${start}%`);
+        array.push(`black ${start}%`);
+        array.push(`black calc(${start}% + 1px)`);
+        array.push(`transparent calc(${start}% + 1px)`);
+    }
+    seekbar.style.background = `linear-gradient(${array.join(",")})`;
+
+    seekbar.addEventListener("mouseup", () => {
+        videoEl.value.focus();
+    });
+}
+
+async function loadVideo() {
+    updateSponsors();
+
+    const el = videoEl.value;
+
+    el.setAttribute("poster", props.video.thumbnailUrl);
+
+    const noPrevPlayer = !playerInstance;
+
+    var streams = [];
+
+    streams.push(...props.video.audioStreams);
+    streams.push(...props.video.videoStreams);
+
+    const MseSupport = window.MediaSource !== undefined || window.ManagedMediaSource !== undefined;
+
+    const lbry = null;
+
+    var uri;
+    var mime;
+
+    if (props.video.livestream) {
+        uri = props.video.hls;
+        mime = "application/x-mpegURL";
+    } else if (
+        props.video.audioStreams.length > 0 &&
+        !lbry &&
+        MseSupport &&
+        !getPreferenceBoolean("preferHls", false)
+    ) {
+        if (!props.video.dash) {
+            const dash = (await import("../utils/DashUtils.js")).generate_dash_file_from_formats(
+                streams,
+                props.video.duration,
+            );
+
+            uri = "data:application/dash+xml;charset=utf-8;base64," + btoa(dash);
+        } else {
+            const url = new URL(props.video.dash);
+            url.searchParams.set("rewrite", false);
+            uri = url.toString();
+        }
+        mime = "application/dash+xml";
+    } else if (lbry) {
+        uri = lbry.url;
+        if (getPreferenceBoolean("proxyLBRY", false)) {
+            const url = new URL(uri);
+            const proxyURL = new URL(props.video.proxyUrl);
+            let proxyPath = proxyURL.pathname;
+            if (proxyPath.lastIndexOf("/") === proxyPath.length - 1) {
+                proxyPath = proxyPath.substring(0, proxyPath.length - 1);
+            }
+
+            url.searchParams.set("host", url.host);
+            url.protocol = proxyURL.protocol;
+            url.host = proxyURL.host;
+            url.pathname = proxyPath + url.pathname;
+            uri = url.toString();
+        }
+        const contentType = await fetch(uri, {
+            method: "HEAD",
+        }).then(response => {
+            uri = response.url;
+            return response.headers.get("Content-Type");
+        });
+        mime = contentType;
+    } else if (props.video.dash && !getPreferenceBoolean("preferHls", false)) {
+        uri = props.video.dash;
+        mime = "application/dash+xml";
+    } else if (props.video.hls) {
+        uri = props.video.hls;
+        mime = "application/x-mpegURL";
+    } else {
+        uri = props.video.videoStreams.findLast(stream => stream.codec == null).url;
+        mime = "video/mp4";
+    }
+
+    if (noPrevPlayer)
+        shakaPromise.then(async () => {
+            if (destroying.value) return;
+            shakaLib.polyfill.installAll();
+
+            const localPlayer = new shakaLib.Player();
+            await localPlayer.attach(el);
+            const proxyURL = new URL(props.video.proxyUrl);
+            let proxyPath = proxyURL.pathname;
+            if (proxyPath.lastIndexOf("/") === proxyPath.length - 1) {
+                proxyPath = proxyPath.substring(0, proxyPath.length - 1);
+            }
+
+            localPlayer.getNetworkingEngine().registerRequestFilter((_type, request) => {
+                const uri = request.uris[0];
+                var url = new URL(uri);
+                const headers = request.headers;
+                if (
+                    url.host.endsWith(".googlevideo.com") ||
+                    (url.host.endsWith(".lbryplayer.xyz") &&
+                        (getPreferenceBoolean("proxyLBRY", false) || headers.Range))
+                ) {
                     url.searchParams.set("host", url.host);
                     url.protocol = proxyURL.protocol;
                     url.host = proxyURL.host;
                     url.pathname = proxyPath + url.pathname;
-                    uri = url.toString();
+                    request.uris[0] = url.toString();
                 }
-                const contentType = await fetch(uri, {
-                    method: "HEAD",
-                }).then(response => {
-                    uri = response.url;
-                    return response.headers.get("Content-Type");
-                });
-                mime = contentType;
-            } else if (this.video.hls) {
-                uri = this.video.hls;
-                mime = "application/x-mpegURL";
-            } else {
-                uri = this.video.videoStreams.findLast(stream => stream.codec == null).url;
-                mime = "video/mp4";
-            }
-
-            if (noPrevPlayer)
-                this.shakaPromise.then(async () => {
-                    if (this.destroying) return;
-                    this.$shaka.polyfill.installAll();
-
-                    const localPlayer = new this.$shaka.Player();
-                    await localPlayer.attach(videoEl);
-                    const proxyURL = new URL(component.video.proxyUrl);
-                    let proxyPath = proxyURL.pathname;
-                    if (proxyPath.lastIndexOf("/") === proxyPath.length - 1) {
-                        proxyPath = proxyPath.substring(0, proxyPath.length - 1);
-                    }
-
-                    localPlayer.getNetworkingEngine().registerRequestFilter((_type, request) => {
-                        const uri = request.uris[0];
-                        var url = new URL(uri);
-                        const headers = request.headers;
-                        if (
-                            url.host.endsWith(".googlevideo.com") ||
-                            (url.host.endsWith(".lbryplayer.xyz") &&
-                                (component.getPreferenceBoolean("proxyLBRY", false) || headers.Range))
-                        ) {
-                            url.searchParams.set("host", url.host);
-                            url.protocol = proxyURL.protocol;
-                            url.host = proxyURL.host;
-                            url.pathname = proxyPath + url.pathname;
-                            request.uris[0] = url.toString();
-                        }
-                        if (url.pathname === proxyPath + "/videoplayback") {
-                            if (headers.Range) {
-                                url.searchParams.set("range", headers.Range.split("=")[1]);
-                                request.headers = {};
-                                request.uris[0] = url.toString();
-                            }
-                        }
-                    });
-
-                    localPlayer.configure(
-                        "streaming.bufferingGoal",
-                        Math.max(this.getPreferenceNumber("bufferGoal", 10), 10),
-                    );
-                    localPlayer.configure("streaming.bufferBehind", 300);
-
-                    this.setPlayerAttrs(localPlayer, videoEl, uri, mime, this.$shaka);
-                });
-            else this.setPlayerAttrs(this.$player, videoEl, uri, mime, this.$shaka);
-
-            if (noPrevPlayer) {
-                videoEl.addEventListener("loadeddata", () => {
-                    if (document.pictureInPictureElement) videoEl.requestPictureInPicture();
-                });
-                videoEl.addEventListener("timeupdate", () => {
-                    const time = videoEl.currentTime;
-                    this.$emit("timeupdate", time);
-                    this.updateProgressDatabase(time);
-                    if (this.sponsors && this.sponsors.segments) {
-                        const segment = this.findCurrentSegment(time);
-                        this.inSegment = !!segment;
-                        if (segment?.autoskip && (!segment.skipped || this.selectedAutoLoop)) {
-                            this.skipSegment(videoEl, segment);
-                        }
-                    }
-                });
-
-                videoEl.addEventListener("volumechange", () => {
-                    this.setPreference("volume", videoEl.volume, true);
-                });
-
-                videoEl.addEventListener("ratechange", e => {
-                    const rate = videoEl.playbackRate;
-                    if (rate > 0 && !isNaN(videoEl.duration) && !isNaN(videoEl.duration - e.timeStamp / 1000))
-                        this.setPreference("rate", rate, true);
-                });
-
-                videoEl.addEventListener("ended", () => {
-                    this.$emit("ended");
-                });
-            }
-            //TODO: Add sponsors on seekbar: https://github.com/ajayyy/SponsorBlock/blob/e39de9fd852adb9196e0358ed827ad38d9933e29/src/js-components/previewBar.ts#L12
-        },
-        findCurrentSegment(time) {
-            return this.sponsors?.segments?.find(s => time >= s.segment[0] && time < s.segment[1]);
-        },
-        onClickSkipSegment() {
-            const videoEl = this.$refs.videoEl;
-            this.skipSegment(videoEl);
-        },
-        skipSegment(videoEl, segment) {
-            const time = videoEl.currentTime;
-            if (!segment) segment = this.findCurrentSegment(time);
-            if (!segment) return;
-            console.log("Skipped segment at " + time);
-            videoEl.currentTime = segment.segment[1];
-            segment.skipped = true;
-        },
-        async setPlayerAttrs(localPlayer, videoEl, uri, mime, shaka) {
-            const url = "/watch?v=" + this.video.id;
-
-            if (!this.$ui) {
-                this.destroy();
-                const OpenButton = class extends shaka.ui.Element {
-                    constructor(parent, controls) {
-                        super(parent, controls);
-
-                        this.newTabButton_ = document.createElement("button");
-                        this.newTabButton_.classList.add("shaka-cast-button");
-                        this.newTabButton_.classList.add("shaka-tooltip");
-                        this.newTabButton_.ariaPressed = "false";
-
-                        this.newTabIcon_ = document.createElement("i");
-                        this.newTabIcon_.classList.add("material-icons-round");
-                        this.newTabIcon_.textContent = "launch";
-                        this.newTabButton_.appendChild(this.newTabIcon_);
-
-                        const label = document.createElement("label");
-                        label.classList.add("shaka-overflow-button-label");
-                        label.classList.add("shaka-overflow-menu-only");
-                        this.newTabNameSpan_ = document.createElement("span");
-                        this.newTabNameSpan_.innerText = "Open in new tab";
-                        label.appendChild(this.newTabNameSpan_);
-
-                        this.newTabButton_.appendChild(label);
-                        this.parent.appendChild(this.newTabButton_);
-
-                        this.eventManager.listen(this.newTabButton_, "click", () => {
-                            this.video.pause();
-                            window.open(url);
-                        });
-                    }
-                };
-
-                OpenButton.Factory = class {
-                    create(rootElement, controls) {
-                        return new OpenButton(rootElement, controls);
-                    }
-                };
-
-                shaka.ui.OverflowMenu.registerElement("open_new_tab", new OpenButton.Factory());
-
-                this.$ui = new shaka.ui.Overlay(localPlayer, this.$refs.container, videoEl);
-
-                const overflowMenuButtons = ["quality", "captions", "picture_in_picture", "playback_rate", "airplay"];
-
-                if (this.isEmbed) {
-                    overflowMenuButtons.push("open_new_tab");
-                }
-
-                const config = {
-                    overflowMenuButtons: overflowMenuButtons,
-                    seekBarColors: {
-                        base: "var(--player-base)",
-                        buffered: "var(--player-buffered)",
-                        played: "var(--player-played)",
-                    },
-                };
-
-                this.$ui.configure(config);
-            }
-
-            this.updateMarkers();
-
-            const event = new Event("playerInit");
-            window.dispatchEvent(event);
-
-            const player = this.$ui.getControls().getPlayer();
-
-            this.setupSeekbarPreview();
-
-            this.$player = player;
-
-            const disableVideo = this.getPreferenceBoolean("listen", false) && !this.video.livestream;
-
-            const prefetchLimit = Math.min(Math.max(this.getPreferenceNumber("prefetchLimit", 2), 0), 10);
-
-            this.$player.configure({
-                preferredVideoCodecs: this.preferredVideoCodecs,
-                preferredAudioCodecs: ["opus", "mp4a"],
-                manifest: {
-                    disableVideo: disableVideo,
-                },
-                streaming: {
-                    segmentPrefetchLimit: prefetchLimit,
-                    retryParameters: {
-                        maxAttempts: Infinity,
-                        baseDelay: 250,
-                        backoffFactor: 1.5,
-                    },
-                },
-            });
-
-            const quality = this.getPreferenceNumber("quality", 0);
-            const qualityConds =
-                quality > 0 && (this.video.audioStreams.length > 0 || this.video.livestream) && !disableVideo;
-            if (qualityConds) this.$player.configure("abr.enabled", false);
-
-            const time = this.$route.query.t ?? this.$route.query.start;
-
-            var startTime = 0;
-
-            if (time) {
-                startTime = parseTimeParam(time);
-                this.initialSeekComplete = true;
-            } else if (window.db && this.getPreferenceBoolean("watchHistory", false)) {
-                await new Promise(resolve => {
-                    var tx = window.db.transaction("watch_history", "readonly");
-                    var store = tx.objectStore("watch_history");
-                    var request = store.get(this.video.id);
-                    request.onsuccess = function (event) {
-                        var video = event.target.result;
-                        const currentTime = video?.currentTime;
-                        if (currentTime) {
-                            if (currentTime < video.duration * 0.9) {
-                                startTime = currentTime;
-                            }
-                        }
-                        resolve();
-                    };
-
-                    tx.oncomplete = () => {
-                        this.initialSeekComplete = true;
-                    };
-                });
-            } else {
-                this.initialSeekComplete = true;
-            }
-
-            player
-                .load(uri, startTime, mime)
-                .then(() => {
-                    const isSafari = window.navigator?.vendor?.includes("Apple");
-
-                    let lang = "en";
-                    if (!isSafari) {
-                        // Set the audio language
-                        const prefLang = this.getPreferenceString("hl", "en").substr(0, 2);
-                        if (player.getAudioLanguages().includes(prefLang)) lang = prefLang;
-                        player.selectAudioLanguage(lang);
-                    }
-
-                    const audioLanguages = player.getAudioLanguages();
-                    if (audioLanguages.length > 1) {
-                        const overflowMenuButtons = this.$ui.getConfiguration().overflowMenuButtons;
-                        // append language menu on index 1
-                        const newOverflowMenuButtons = [
-                            ...overflowMenuButtons.slice(0, 1),
-                            "language",
-                            ...overflowMenuButtons.slice(1),
-                        ];
-                        this.$ui.configure("overflowMenuButtons", newOverflowMenuButtons);
-                    }
-
-                    if (qualityConds) {
-                        var leastDiff = Number.MAX_VALUE;
-                        var bestStream = null;
-
-                        var bestAudio = 0;
-
-                        const tracks = player
-                            .getVariantTracks()
-                            .filter(track => track.language == lang || track.language == "und");
-
-                        // Choose the best audio stream
-                        if (quality >= 480)
-                            tracks.forEach(track => {
-                                const audioBandwidth = track.audioBandwidth;
-                                if (audioBandwidth > bestAudio) bestAudio = audioBandwidth;
-                            });
-
-                        // Find best matching stream based on resolution and bitrate
-                        tracks
-                            .sort((a, b) => a.bandwidth - b.bandwidth)
-                            .forEach(stream => {
-                                if (stream.audioBandwidth < bestAudio) return;
-
-                                const diff = Math.abs(quality - stream.height);
-                                if (diff < leastDiff) {
-                                    leastDiff = diff;
-                                    bestStream = stream;
-                                }
-                            });
-
-                        player.selectVariantTrack(bestStream, true);
-                    }
-
-                    this.video.subtitles.map(subtitle => {
-                        player.addTextTrackAsync(
-                            subtitle.url,
-                            subtitle.code,
-                            "subtitles",
-                            subtitle.mimeType,
-                            null,
-                            subtitle.name,
-                        );
-                    });
-                    videoEl.volume = this.getPreferenceNumber("volume", 1);
-                    const rate = this.getPreferenceNumber("rate", 1);
-                    videoEl.playbackRate = rate;
-                    videoEl.defaultPlaybackRate = rate;
-
-                    const autoDisplayCaptions = this.getPreferenceBoolean("autoDisplayCaptions", false);
-                    this.$player.setTextTrackVisibility(autoDisplayCaptions);
-
-                    const prefSubtitles = this.getPreferenceString("subtitles", "");
-                    if (prefSubtitles !== "") {
-                        const textTracks = this.$player.getTextTracks();
-                        const subtitleIdx = textTracks.findIndex(textTrack => textTrack.language == prefSubtitles);
-                        if (subtitleIdx != -1) {
-                            this.$player.setTextTrackVisibility(true);
-                            this.$player.selectTextTrack(textTracks[subtitleIdx]);
-                        }
-                    }
-                })
-                .catch(e => {
-                    console.error(e);
-                    this.error = e.code;
-                });
-
-            // expand the player to fullscreen when the fullscreen query equals true
-            if (this.$route.query.fullscreen === "true" && !this.$ui.getControls().isFullScreenEnabled())
-                this.$ui.getControls().toggleFullScreen();
-
-            const seekbar = this.$refs.container.querySelector(".shaka-seek-bar");
-            const array = ["to right"];
-            for (const chapter of this.video.chapters) {
-                const start = (chapter.start / this.video.duration) * 100;
-                if (start === 0) {
-                    continue;
-                }
-                array.push(`transparent ${start}%`);
-                array.push(`black ${start}%`);
-                array.push(`black calc(${start}% + 1px)`);
-                array.push(`transparent calc(${start}% + 1px)`);
-            }
-            seekbar.style.background = `linear-gradient(${array.join(",")})`;
-
-            seekbar.addEventListener("mouseup", () => {
-                this.$refs.videoEl.focus();
-            });
-        },
-        async updateProgressDatabase(time) {
-            // debounce
-            if (new Date().getTime() - this.lastUpdate < 500) return;
-            this.lastUpdate = new Date().getTime();
-
-            if (!this.initialSeekComplete || !this.video.id || !window.db) return;
-
-            var tx = window.db.transaction("watch_history", "readwrite");
-            var store = tx.objectStore("watch_history");
-            var request = store.get(this.video.id);
-            request.onsuccess = function (event) {
-                var video = event.target.result;
-                if (video) {
-                    video.currentTime = time;
-                    store.put(video);
-                }
-            };
-        },
-        seek(time) {
-            if (this.$refs.videoEl) {
-                this.$refs.videoEl.currentTime = time;
-            }
-        },
-        adjustPlaybackSpeed(newSpeed) {
-            const normalizedSpeed = Math.min(4, Math.max(0.25, newSpeed));
-            this.$player.trickPlay(normalizedSpeed);
-            if (this.hideCurrentSpeed) window.clearTimeout(this.hideCurrentSpeed);
-            this.showCurrentSpeed = false;
-            this.showCurrentSpeed = true;
-            this.hideCurrentSpeed = window.setTimeout(() => (this.showCurrentSpeed = false), 1500);
-        },
-        adjustPlaybackVolume(newVolume) {
-            const normalizedVolume = Math.min(1, Math.max(0, newVolume));
-            this.$refs.videoEl.volume = normalizedVolume;
-            if (this.hideCurrentVolume) window.clearTimeout(this.hideCurrentVolume);
-            this.showCurrentVolume = false;
-            this.showCurrentVolume = true;
-            this.hideCurrentVolume = window.setTimeout(() => (this.showCurrentVolume = false), 1500);
-        },
-        setSpeedFromInput() {
-            try {
-                const newSpeed = Number(this.playbackSpeedInput);
-                this.adjustPlaybackSpeed(newSpeed);
-            } catch (err) {
-                alert(this.$t("actions.invalid_input"));
-            }
-            this.showSpeedModal = false;
-        },
-        updateMarkers() {
-            const markers = this.$refs.container.querySelector(".shaka-ad-markers");
-            const array = ["to right"];
-            this.sponsors?.segments?.forEach(segment => {
-                const start = (segment.segment[0] / this.video.duration) * 100;
-                const end = (segment.segment[1] / this.video.duration) * 100;
-
-                var color = [
-                    "sponsor",
-                    "selfpromo",
-                    "interaction",
-                    "poi_highlight",
-                    "intro",
-                    "outro",
-                    "preview",
-                    "filler",
-                    "music_offtopic",
-                ].includes(segment.category)
-                    ? `var(--spon-seg-${segment.category})`
-                    : "var(--spon-seg-default)";
-
-                array.push(`transparent ${start}%`);
-                array.push(`${color} ${start}%`);
-                array.push(`${color} ${end}%`);
-                array.push(`transparent ${end}%`);
-            });
-
-            if (array.length <= 1) {
-                return;
-            }
-
-            if (markers) markers.style.background = `linear-gradient(${array.join(",")})`;
-        },
-        updateSponsors() {
-            if (this.getPreferenceBoolean("showMarkers", true)) {
-                this.shakaPromise.then(() => {
-                    this.updateMarkers();
-                });
-            }
-        },
-        setupSeekbarPreview() {
-            if (!this.video.previewFrames) return;
-            let seekBar = document.querySelector(".shaka-seek-bar");
-            // load the thumbnail preview when the user moves over the seekbar
-            seekBar.addEventListener("mousemove", e => {
-                this.isHoveringTimebar = true;
-                const position = (e.offsetX / e.target.offsetWidth) * this.video.duration;
-                this.showSeekbarPreview(position * 1000);
-            });
-            // hide the preview when the user stops hovering the seekbar
-            seekBar.addEventListener("mouseout", () => {
-                this.isHoveringTimebar = false;
-                this.$refs.previewContainer.style.display = "none";
-            });
-        },
-        async showSeekbarPreview(position) {
-            const frame = this.getFrame(position);
-            const originalImage = await this.loadImage(frame.url);
-            if (!this.isHoveringTimebar) return;
-
-            const seekBar = document.querySelector(".shaka-seek-bar");
-            const container = this.$refs.previewContainer;
-            const canvas = this.$refs.preview;
-            const ctx = canvas.getContext("2d");
-
-            const offsetX = frame.positionX * frame.frameWidth;
-            const offsetY = frame.positionY * frame.frameHeight;
-
-            canvas.width = frame.frameWidth > 100 ? frame.frameWidth : frame.frameWidth * 2;
-            canvas.height = frame.frameWidth > 100 ? frame.frameHeight : frame.frameHeight * 2;
-            // draw the thumbnail preview into the canvas by cropping only the relevant part
-            ctx.drawImage(
-                originalImage,
-                offsetX,
-                offsetY,
-                frame.frameWidth,
-                frame.frameHeight,
-                0,
-                0,
-                canvas.width,
-                canvas.height,
-            );
-
-            // calculate the thumbnail preview offset and display it
-            const centerOffset = position / this.video.duration / 10;
-            const left = centerOffset - ((0.5 * canvas.width) / seekBar.clientWidth) * 100;
-            const maxLeft =
-                ((seekBar.clientWidth - canvas.clientWidth) / seekBar.clientWidth) * 100 - this.seekbarPadding;
-
-            this.currentTime = position / 1000;
-
-            container.style.left = `max(${this.seekbarPadding}%, min(${left}%, ${maxLeft}%))`;
-            container.style.display = "flex";
-        },
-        // ineffective algorithm to find the thumbnail corresponding to the currently hovered position in the video
-        getFrame(position) {
-            let startPosition = 0;
-            const framePage = this.video.previewFrames.at(-1);
-            for (let i = 0; i < framePage.urls.length; i++) {
-                for (let positionY = 0; positionY < framePage.framesPerPageY; positionY++) {
-                    for (let positionX = 0; positionX < framePage.framesPerPageX; positionX++) {
-                        const endPosition = startPosition + framePage.durationPerFrame;
-                        if (position >= startPosition && position <= endPosition) {
-                            return {
-                                url: framePage.urls[i],
-                                positionX: positionX,
-                                positionY: positionY,
-                                frameWidth: framePage.frameWidth,
-                                frameHeight: framePage.frameHeight,
-                            };
-                        }
-                        startPosition = endPosition;
+                if (url.pathname === proxyPath + "/videoplayback") {
+                    if (headers.Range) {
+                        url.searchParams.set("range", headers.Range.split("=")[1]);
+                        request.headers = {};
+                        request.uris[0] = url.toString();
                     }
                 }
-            }
-            return null;
-        },
-        // creates a new image from an URL
-        loadImage(url) {
-            return new Promise(r => {
-                const i = new Image();
-                i.onload = () => r(i);
-                i.src = url;
             });
-        },
-        destroy(hotkeys) {
-            if (this.$ui && !document.pictureInPictureElement) {
-                this.$ui.destroy();
-                this.$ui = undefined;
-                this.$player = undefined;
+
+            localPlayer.configure("streaming.bufferingGoal", Math.max(getPreferenceNumber("bufferGoal", 10), 10));
+            localPlayer.configure("streaming.bufferBehind", 300);
+
+            setPlayerAttrs(localPlayer, el, uri, mime, shakaLib);
+        });
+    else setPlayerAttrs(playerInstance, el, uri, mime, shakaLib);
+
+    if (noPrevPlayer) {
+        el.addEventListener("loadeddata", () => {
+            if (document.pictureInPictureElement) el.requestPictureInPicture();
+        });
+        el.addEventListener("timeupdate", () => {
+            const time = el.currentTime;
+            emit("timeupdate", time);
+            updateProgressDatabase(time);
+            if (props.sponsors && props.sponsors.segments) {
+                const segment = findCurrentSegment(time);
+                inSegment.value = !!segment;
+                if (segment?.autoskip && (!segment.skipped || props.selectedAutoLoop)) {
+                    skipSegment(el, segment);
+                }
             }
-            if (this.$player) {
-                this.$player.destroy();
-                if (!document.pictureInPictureElement) this.$player = undefined;
-            }
-            if (hotkeys) this.$hotkeys?.unbind();
-            this.$refs.container?.querySelectorAll("div").forEach(node => node.remove());
-        },
-    },
-};
+        });
+
+        el.addEventListener("volumechange", () => {
+            setPreference("volume", el.volume, true);
+        });
+
+        el.addEventListener("ratechange", e => {
+            const rate = el.playbackRate;
+            if (rate > 0 && !isNaN(el.duration) && !isNaN(el.duration - e.timeStamp / 1000))
+                setPreference("rate", rate, true);
+        });
+
+        el.addEventListener("ended", () => {
+            emit("ended");
+        });
+    }
+}
+
+function destroy(hotkeys) {
+    if (thumbnailVttUrl) {
+        URL.revokeObjectURL(thumbnailVttUrl);
+        thumbnailVttUrl = null;
+    }
+    if (uiInstance && !document.pictureInPictureElement) {
+        uiInstance.destroy();
+        uiInstance = undefined;
+        playerInstance = undefined;
+    }
+    if (playerInstance) {
+        playerInstance.destroy();
+        if (!document.pictureInPictureElement) playerInstance = undefined;
+    }
+    if (hotkeys) hotkeysLib?.unbind();
+    container.value?.querySelectorAll("div").forEach(node => node.remove());
+}
+
+onMounted(() => {
+    if (!shakaLib) shakaPromise = shakaImport.then(shaka => shaka.default).then(shaka => (shakaLib = shaka));
+    if (!hotkeysLib) hotkeysPromise = hotkeysImport.then(mod => mod.default).then(hk => (hotkeysLib = hk));
+});
+
+onActivated(() => {
+    destroying.value = false;
+    props.sponsors?.segments?.forEach(segment => (segment.skipped = false));
+    hotkeysPromise.then(() => {
+        hotkeysLib(
+            "f,m,j,k,l,c,space,up,down,left,right,ctrl+left,ctrl+right,home,end,0,1,2,3,4,5,6,7,8,9,shift+n,shift+s,shift+,,shift+.,alt+p,return,.,,",
+            function (e, handler) {
+                const el = videoEl.value;
+                switch (handler.key) {
+                    case "f":
+                        uiInstance.getControls().toggleFullScreen();
+                        e.preventDefault();
+                        break;
+                    case "m":
+                        el.muted = !el.muted;
+                        e.preventDefault();
+                        break;
+                    case "j":
+                        el.currentTime = Math.max(el.currentTime - 15, 0);
+                        e.preventDefault();
+                        break;
+                    case "l":
+                        el.currentTime = el.currentTime + 15;
+                        e.preventDefault();
+                        break;
+                    case "c":
+                        if (getActiveTextTrack()) {
+                            lastSelectedTextTrack = getActiveTextTrack();
+                            playerInstance.selectTextTrack(null);
+                        } else if (lastSelectedTextTrack) {
+                            playerInstance.selectTextTrack(lastSelectedTextTrack);
+                        } else {
+                            selectTextTrack(playerInstance.getTextTracks()[0] ?? null);
+                        }
+                        e.preventDefault();
+                        break;
+                    case "k":
+                    case "space":
+                        if (el.paused) el.play();
+                        else el.pause();
+                        e.preventDefault();
+                        break;
+                    case "up":
+                        adjustPlaybackVolume(el.volume + 0.05);
+                        e.preventDefault();
+                        break;
+                    case "down":
+                        adjustPlaybackVolume(el.volume - 0.05);
+                        e.preventDefault();
+                        break;
+                    case "left":
+                        el.currentTime = Math.max(el.currentTime - 5, 0);
+                        e.preventDefault();
+                        break;
+                    case "right":
+                        el.currentTime = el.currentTime + 5;
+                        e.preventDefault();
+                        break;
+                    case "ctrl+left": {
+                        el.currentTime = props.video.chapters.findLast(chapter => chapter.start < el.currentTime).start;
+                        e.preventDefault();
+                        break;
+                    }
+                    case "ctrl+right": {
+                        el.currentTime =
+                            props.video.chapters.find(chapter => chapter.start > el.currentTime)?.start || el.duration;
+                        e.preventDefault();
+                        break;
+                    }
+                    case "home":
+                        el.currentTime = 0;
+                        e.preventDefault();
+                        break;
+                    case "end":
+                        el.currentTime = el.duration;
+                        e.preventDefault();
+                        break;
+                    case "0":
+                        el.currentTime = 0;
+                        e.preventDefault();
+                        break;
+                    case "1":
+                        el.currentTime = el.duration * 0.1;
+                        e.preventDefault();
+                        break;
+                    case "2":
+                        el.currentTime = el.duration * 0.2;
+                        e.preventDefault();
+                        break;
+                    case "3":
+                        el.currentTime = el.duration * 0.3;
+                        e.preventDefault();
+                        break;
+                    case "4":
+                        el.currentTime = el.duration * 0.4;
+                        e.preventDefault();
+                        break;
+                    case "5":
+                        el.currentTime = el.duration * 0.5;
+                        e.preventDefault();
+                        break;
+                    case "6":
+                        el.currentTime = el.duration * 0.6;
+                        e.preventDefault();
+                        break;
+                    case "7":
+                        el.currentTime = el.duration * 0.7;
+                        e.preventDefault();
+                        break;
+                    case "8":
+                        el.currentTime = el.duration * 0.8;
+                        e.preventDefault();
+                        break;
+                    case "9":
+                        el.currentTime = el.duration * 0.9;
+                        e.preventDefault();
+                        break;
+                    case "shift+n":
+                        emit("navigateNext");
+                        e.preventDefault();
+                        break;
+                    case "shift+s":
+                        showSpeedModal.value = true;
+                        break;
+                    case "shift+,":
+                        adjustPlaybackSpeed(el.playbackRate - 0.25);
+                        break;
+                    case "shift+.":
+                        adjustPlaybackSpeed(el.playbackRate + 0.25);
+                        break;
+                    case "alt+p":
+                        document.pictureInPictureElement
+                            ? document.exitPictureInPicture()
+                            : el.requestPictureInPicture();
+                        break;
+                    case "return":
+                        skipSegment(el);
+                        break;
+                    case ".":
+                        el.currentTime += 0.04;
+                        e.preventDefault();
+                        break;
+                    case ",":
+                        el.currentTime -= 0.04;
+                        e.preventDefault();
+                        break;
+                }
+            },
+        );
+    });
+});
+
+onDeactivated(() => {
+    destroying.value = true;
+    destroy(true);
+});
+
+onUnmounted(() => {
+    destroying.value = true;
+    destroy(true);
+});
+
+defineExpose({
+    loadVideo,
+    seek,
+    destroy,
+    updateSponsors,
+    isFullScreenEnabled: () => uiInstance?.getControls()?.isFullScreenEnabled(),
+});
 </script>
 
 <style>
-:root {
-    --player-base: rgba(255, 255, 255, 0.3);
-    --player-buffered: rgba(255, 255, 255, 0.54);
-    --player-played: rgba(255, 0, 0);
+@layer base {
+    :root {
+        --player-base: rgba(255, 255, 255, 0.3);
+        --player-buffered: rgba(255, 255, 255, 0.54);
+        --player-played: rgba(255, 0, 0);
 
-    --spon-seg-sponsor: #00d400;
-    --spon-seg-selfpromo: #ffff00;
-    --spon-seg-interaction: #cc00ff;
-    --spon-seg-poi_highlight: #ff1684;
-    --spon-seg-intro: #00ffff;
-    --spon-seg-outro: #0202ed;
-    --spon-seg-preview: #008fd6;
-    --spon-seg-filler: #7300ff;
-    --spon-seg-music_offtopic: #ff9900;
-    --spon-seg-default: white;
+        --spon-seg-sponsor: #00d400;
+        --spon-seg-selfpromo: #ffff00;
+        --spon-seg-interaction: #cc00ff;
+        --spon-seg-poi_highlight: #ff1684;
+        --spon-seg-intro: #00ffff;
+        --spon-seg-outro: #0202ed;
+        --spon-seg-preview: #008fd6;
+        --spon-seg-filler: #7300ff;
+        --spon-seg-music_offtopic: #ff9900;
+        --spon-seg-default: white;
+    }
 }
 
-.player-container {
-    @apply max-h-75vh min-h-64 bg-black;
-}
+@layer components {
+    .shaka-video-container .material-icons-round {
+        font-size: 1.25rem !important;
+        line-height: 1.75rem;
+    }
 
-.shaka-video-container .material-icons-round {
-    @apply !text-xl;
-}
+    .shaka-video-container:-webkit-full-screen {
+        max-height: none !important;
+    }
 
-.shaka-current-time {
-    @apply !text-base;
-}
+    /* captions style */
+    .shaka-text-wrapper * {
+        text-align: left !important;
+    }
 
-.shaka-video-container:-webkit-full-screen {
-    max-height: none !important;
-}
+    .shaka-text-wrapper > span > span {
+        background-color: transparent !important;
+    }
 
-/* captions style */
-.shaka-text-wrapper * {
-    text-align: left !important;
-}
+    /* apply to all spans that don't include multiple other spans to avoid the style being applied to the text container too when the subtitles are two lines */
+    .shaka-text-wrapper > span > span *:first-child:last-child {
+        background-color: rgba(0, 0, 0, 0.6) !important;
+        padding: 0.09em 0;
+    }
 
-.shaka-text-wrapper > span > span {
-    background-color: transparent !important;
-}
-
-/* apply to all spans that don't include multiple other spans to avoid the style being applied to the text container too when the subtitles are two lines */
-.shaka-text-wrapper > span > span *:first-child:last-child {
-    background-color: rgba(0, 0, 0, 0.6) !important;
-    padding: 0.09em 0;
-}
-
-#shaka-player-ui-time-container {
-    display: none !important;
-}
-
-.skip-segment-button {
-    /* position button above player overlay */
-    z-index: 1000;
-
-    position: absolute;
-    transform: translate(0, -50%);
-    top: 50%;
-    right: 0;
-
-    background-color: rgb(0 0 0 / 0.5);
-    border: 2px rgba(255, 255, 255, 0.75) solid;
-    border-right: 0;
-    border-radius: 0.75em;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    padding: 0.5em;
-
-    /* center text vertically */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    color: #fff;
-    line-height: 1.5em;
-}
-
-.skip-segment-button .material-icons-round {
-    font-size: 1.6em !important;
-    line-height: inherit !important;
+    /* Override Tailwind preflight's `img { max-width: 100% }` which clamps
+       the sprite-sheet image to the container width and breaks Shaka's
+       transform-based thumbnail cropping. */
+    .shaka-player-ui-thumbnail-image {
+        max-width: none !important;
+    }
 }
 </style>

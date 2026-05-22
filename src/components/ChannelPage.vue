@@ -12,14 +12,14 @@
             <div class="flex place-items-center">
                 <img height="48" width="48" class="m-1 rounded-full" :src="channel.avatarUrl" />
                 <div class="flex items-center gap-1">
-                    <h1 class="!text-xl" v-text="channel.name" />
-                    <i v-if="channel.verified" class="i-fa6-solid:check !text-xl" />
+                    <h1 class="text-xl!" v-text="channel.name" />
+                    <i-fa6-solid-check v-if="channel.verified" class="text-xl!" />
                 </div>
             </div>
 
             <div class="flex gap-2">
                 <button
-                    class="btn"
+                    class="inline-block w-auto cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
                     @click="subscribeHandler"
                     v-text="
                         $t('actions.' + (subscribed ? 'unsubscribe' : 'subscribe')) +
@@ -31,7 +31,7 @@
                 <button
                     v-if="subscribed"
                     v-t="'actions.add_to_group'"
-                    class="btn"
+                    class="inline-block w-auto cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
                     @click="showGroupModal = true"
                 ></button>
 
@@ -43,9 +43,9 @@
                     role="button"
                     :href="`${apiUrl()}/feed/unauthenticated/rss?channels=${channel.id}`"
                     target="_blank"
-                    class="btn flex-col"
+                    class="inline-block w-auto cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
                 >
-                    <i class="i-fa6-solid:rss" />
+                    <i-fa6-solid-rss />
                 </a>
             </div>
         </div>
@@ -58,20 +58,28 @@
             <button
                 v-for="(tab, index) in tabs"
                 :key="tab.name"
-                class="btn mr-2"
-                :class="{ active: selectedTab == index }"
+                class="mr-2 inline-block w-auto cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
+                :class="{
+                    'bg-gray-500 text-white dark:bg-dark-300': selectedTab == index,
+                }"
                 @click="loadTab(index)"
             >
                 <span v-text="tab.translatedName"></span>
             </button>
             <router-link :to="`/playlist?list=UU${channel.id.substring(2)}`">
-                <button class="btn h-full">Play all videos</button>
+                <button
+                    class="inline-block h-full w-auto cursor-pointer rounded-sm bg-gray-300 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-md:px-2 md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
+                >
+                    Play all videos
+                </button>
             </router-link>
         </div>
 
         <hr />
 
-        <div class="video-grid">
+        <div
+            class="mx-2 grid grid-cols-1 gap-y-5 max-md:gap-x-3 sm:mx-0 sm:grid-cols-2 md:grid-cols-3 md:gap-x-6 lg:grid-cols-4 xl:grid-cols-5"
+        >
             <ContentItem
                 v-for="item in contentItems"
                 :key="item.url"
@@ -86,179 +94,184 @@
     </LoadingIndicatorPage>
 </template>
 
-<script>
+<script setup>
+import { ref, onMounted, onActivated, onDeactivated, onUnmounted } from "vue";
+import { useRoute } from "vue-router";
+import { useI18n } from "vue-i18n";
 import ErrorHandler from "./ErrorHandler.vue";
 import ContentItem from "./ContentItem.vue";
 import WatchOnButton from "./WatchOnButton.vue";
 import LoadingIndicatorPage from "./LoadingIndicatorPage.vue";
 import CollapsableText from "./CollapsableText.vue";
 import AddToGroupModal from "./AddToGroupModal.vue";
+import { fetchJson, apiUrl } from "@/composables/useApi.js";
+import { numberFormat } from "@/composables/useFormatting.js";
+import {
+    fetchSubscriptionStatus,
+    toggleSubscriptionState,
+    fetchDeArrowContent,
+} from "@/composables/useSubscriptions.js";
+import { updateWatched } from "@/composables/useMisc.js";
 
-export default {
-    components: {
-        ErrorHandler,
-        ContentItem,
-        WatchOnButton,
-        LoadingIndicatorPage,
-        CollapsableText,
-        AddToGroupModal,
-    },
-    data() {
-        return {
-            channel: null,
-            subscribed: false,
-            tabs: [],
-            selectedTab: 0,
-            contentItems: [],
-            showGroupModal: false,
-        };
-    },
-    mounted() {
-        this.getChannelData();
-    },
-    activated() {
-        if (this.channel && !this.channel.error) document.title = this.channel.name + " - Piped";
-        window.addEventListener("scroll", this.handleScroll);
-        if (this.channel && !this.channel.error) this.updateWatched(this.channel.relatedStreams);
-    },
-    deactivated() {
-        window.removeEventListener("scroll", this.handleScroll);
-    },
-    unmounted() {
-        window.removeEventListener("scroll", this.handleScroll);
-    },
-    methods: {
-        async fetchSubscribedStatus() {
-            if (!this.channel.id) return;
+const route = useRoute();
+const { t } = useI18n();
 
-            this.subscribed = await this.fetchSubscriptionStatus(this.channel.id);
-        },
-        async fetchChannel() {
-            const url = this.$route.path.includes("@")
-                ? this.apiUrl() + "/@/" + this.$route.params.channelId
-                : this.apiUrl() + "/" + this.$route.params.path + "/" + this.$route.params.channelId;
-            return await this.fetchJson(url);
-        },
-        async getChannelData() {
-            this.fetchChannel()
-                .then(data => (this.channel = data))
-                .then(() => {
-                    if (!this.channel.error) {
-                        document.title = this.channel.name + " - Piped";
-                        this.contentItems = this.channel.relatedStreams;
-                        this.fetchSubscribedStatus();
-                        this.updateWatched(this.channel.relatedStreams);
-                        this.fetchDeArrowContent(this.channel.relatedStreams);
-                        this.tabs.push({
-                            translatedName: this.$t("video.videos"),
-                        });
-                        const tabQuery = this.$route.query.tab;
-                        for (let i = 0; i < this.channel.tabs.length; i++) {
-                            let tab = this.channel.tabs[i];
-                            tab.translatedName = this.getTranslatedTabName(tab.name);
-                            this.tabs.push(tab);
-                            if (tab.name === tabQuery) this.loadTab(i + 1);
-                        }
-                    }
+const channel = ref(null);
+const subscribed = ref(false);
+const tabs = ref([]);
+const selectedTab = ref(0);
+const contentItems = ref([]);
+const showGroupModal = ref(false);
+let loading = false;
+
+async function fetchSubscribedStatus() {
+    if (!channel.value.id) return;
+    subscribed.value = await fetchSubscriptionStatus(channel.value.id);
+}
+
+async function fetchChannel() {
+    const url = route.path.includes("@")
+        ? apiUrl() + "/@/" + route.params.channelId
+        : apiUrl() + "/" + route.params.path + "/" + route.params.channelId;
+    return await fetchJson(url);
+}
+
+async function getChannelData() {
+    fetchChannel()
+        .then(data => (channel.value = data))
+        .then(() => {
+            if (!channel.value.error) {
+                document.title = channel.value.name + " - Piped";
+                contentItems.value = channel.value.relatedStreams;
+                fetchSubscribedStatus();
+                updateWatched(channel.value.relatedStreams);
+                fetchDeArrowContent(channel.value.relatedStreams);
+                tabs.value.push({
+                    translatedName: t("video.videos"),
                 });
-        },
-        handleScroll() {
-            if (
-                this.loading ||
-                !this.channel ||
-                !this.channel.nextpage ||
-                (this.selectedTab != 0 && !this.tabs[this.selectedTab].tabNextPage)
-            )
-                return;
-            if (window.innerHeight + window.scrollY >= document.body.offsetHeight - window.innerHeight) {
-                this.loading = true;
-                if (this.selectedTab == 0) {
-                    this.fetchChannelNextPage();
-                } else {
-                    this.fetchChannelTabNextPage();
+                const tabQuery = route.query.tab;
+                for (let i = 0; i < channel.value.tabs.length; i++) {
+                    let tab = channel.value.tabs[i];
+                    tab.translatedName = getTranslatedTabName(tab.name);
+                    tabs.value.push(tab);
+                    if (tab.name === tabQuery) loadTab(i + 1);
                 }
             }
-        },
-        fetchChannelNextPage() {
-            this.fetchJson(this.apiUrl() + "/nextpage/channel/" + this.channel.id, {
-                nextpage: this.channel.nextpage,
-            }).then(json => {
-                this.channel.nextpage = json.nextpage;
-                this.loading = false;
-                this.updateWatched(json.relatedStreams);
-                this.contentItems.push(...json.relatedStreams);
-                this.fetchDeArrowContent(json.relatedStreams);
-            });
-        },
-        fetchChannelTabNextPage() {
-            this.fetchJson(this.apiUrl() + "/channels/tabs", {
-                data: this.tabs[this.selectedTab].data,
-                nextpage: this.tabs[this.selectedTab].tabNextPage,
-            }).then(json => {
-                this.tabs[this.selectedTab].tabNextPage = json.nextpage;
-                this.loading = false;
-                json.this.contentItems.push(...json.content);
-                this.fetchDeArrowContent(json.content);
-                this.tabs[this.selectedTab].content = this.contentItems;
-            });
-        },
-        subscribeHandler() {
-            this.toggleSubscriptionState(this.channel.id, this.subscribed).then(success => {
-                if (success) this.subscribed = !this.subscribed;
-            });
-        },
-        getTranslatedTabName(tabName) {
-            let translatedTabName = tabName;
-            switch (tabName) {
-                case "livestreams":
-                    translatedTabName = this.$t("titles.livestreams");
-                    break;
-                case "playlists":
-                    translatedTabName = this.$t("titles.playlists");
-                    break;
-                case "albums":
-                    translatedTabName = this.$t("titles.albums");
-                    break;
-                case "shorts":
-                    translatedTabName = this.$t("video.shorts");
-                    break;
-                default:
-                    console.error(`Tab name "${tabName}" is not translated yet!`);
-                    break;
-            }
-            return translatedTabName;
-        },
-        loadTab(index) {
-            this.selectedTab = index;
-
-            // update the tab query in the url path
-            const url = new URL(window.location);
-            url.searchParams.set("tab", this.tabs[index].name ?? "videos");
-            window.history.replaceState(window.history.state, "", url);
-
-            if (index == 0) {
-                this.contentItems = this.channel.relatedStreams;
-                return;
-            }
-
-            if (this.tabs[index].content) {
-                this.contentItems = this.tabs[index].content;
-                return;
-            }
-            this.fetchJson(this.apiUrl() + "/channels/tabs", {
-                data: this.tabs[index].data,
-            }).then(tab => {
-                this.contentItems = this.tabs[index].content = tab.content;
-                this.fetchDeArrowContent(tab.content);
-                this.tabs[this.selectedTab].tabNextPage = tab.nextpage;
-            });
-        },
-    },
-};
-</script>
-
-<style>
-.active {
-    border: 0.1rem outset red;
+        });
 }
-</style>
+
+function handleScroll() {
+    if (
+        loading ||
+        !channel.value ||
+        !channel.value.nextpage ||
+        (selectedTab.value != 0 && !tabs.value[selectedTab.value].tabNextPage)
+    )
+        return;
+    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - window.innerHeight) {
+        loading = true;
+        if (selectedTab.value == 0) {
+            fetchChannelNextPage();
+        } else {
+            fetchChannelTabNextPage();
+        }
+    }
+}
+
+function fetchChannelNextPage() {
+    fetchJson(apiUrl() + "/nextpage/channel/" + channel.value.id, {
+        nextpage: channel.value.nextpage,
+    }).then(json => {
+        channel.value.nextpage = json.nextpage;
+        loading = false;
+        updateWatched(json.relatedStreams);
+        contentItems.value.push(...json.relatedStreams);
+        fetchDeArrowContent(json.relatedStreams);
+    });
+}
+
+function fetchChannelTabNextPage() {
+    fetchJson(apiUrl() + "/channels/tabs", {
+        data: tabs.value[selectedTab.value].data,
+        nextpage: tabs.value[selectedTab.value].tabNextPage,
+    }).then(json => {
+        tabs.value[selectedTab.value].tabNextPage = json.nextpage;
+        loading = false;
+        contentItems.value.push(...json.content);
+        fetchDeArrowContent(json.content);
+        tabs.value[selectedTab.value].content = contentItems.value;
+    });
+}
+
+function subscribeHandler() {
+    toggleSubscriptionState(channel.value.id, subscribed.value).then(success => {
+        if (success) subscribed.value = !subscribed.value;
+    });
+}
+
+function getTranslatedTabName(tabName) {
+    let translatedTabName = tabName;
+    switch (tabName) {
+        case "livestreams":
+            translatedTabName = t("titles.livestreams");
+            break;
+        case "playlists":
+            translatedTabName = t("titles.playlists");
+            break;
+        case "albums":
+            translatedTabName = t("titles.albums");
+            break;
+        case "shorts":
+            translatedTabName = t("video.shorts");
+            break;
+        default:
+            console.error(`Tab name "${tabName}" is not translated yet!`);
+            break;
+    }
+    return translatedTabName;
+}
+
+function loadTab(index) {
+    selectedTab.value = index;
+
+    // update the tab query in the url path
+    const url = new URL(window.location);
+    url.searchParams.set("tab", tabs.value[index].name ?? "videos");
+    window.history.replaceState(window.history.state, "", url);
+
+    if (index == 0) {
+        contentItems.value = channel.value.relatedStreams;
+        return;
+    }
+
+    if (tabs.value[index].content) {
+        contentItems.value = tabs.value[index].content;
+        return;
+    }
+    fetchJson(apiUrl() + "/channels/tabs", {
+        data: tabs.value[index].data,
+    }).then(tab => {
+        contentItems.value = tabs.value[index].content = tab.content;
+        fetchDeArrowContent(tab.content);
+        tabs.value[selectedTab.value].tabNextPage = tab.nextpage;
+    });
+}
+
+onMounted(() => {
+    getChannelData();
+});
+
+onActivated(() => {
+    if (channel.value && !channel.value.error) document.title = channel.value.name + " - Piped";
+    window.addEventListener("scroll", handleScroll);
+    if (channel.value && !channel.value.error) updateWatched(channel.value.relatedStreams);
+});
+
+onDeactivated(() => {
+    window.removeEventListener("scroll", handleScroll);
+});
+
+onUnmounted(() => {
+    window.removeEventListener("scroll", handleScroll);
+});
+</script>

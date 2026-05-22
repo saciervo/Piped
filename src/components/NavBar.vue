@@ -1,7 +1,7 @@
 <template>
-    <nav class="relative w-full flex flex-wrap items-center justify-center px-2 pb-2.5 sm:px-4">
+    <nav class="relative flex w-full flex-wrap items-center justify-center px-2 pb-2.5 sm:px-4">
         <div class="flex flex-1 justify-start">
-            <router-link class="flex items-center text-3xl font-bold font-sans" :to="homePagePath"
+            <router-link class="flex items-center font-sans text-3xl font-bold" to="/"
                 ><img
                     alt="logo"
                     src="/img/icons/logo.svg"
@@ -11,11 +11,11 @@
                 />iped</router-link
             >
         </div>
-        <div class="search-container lt-md:hidden">
+        <div class="relative inline-flex items-center max-md:hidden">
             <input
                 ref="videoSearch"
                 v-model="searchText"
-                class="input h-10 w-72 pr-20"
+                class="h-10 w-72 rounded-md bg-gray-300 px-2.5 pr-20 text-gray-600 focus:shadow-red-400 focus:outline-2 focus:outline-red-500 dark:bg-dark-400 dark:text-gray-400"
                 type="text"
                 role="search"
                 :title="$t('actions.search')"
@@ -25,81 +25,101 @@
                 @focus="onInputFocus"
                 @blur="onInputBlur"
             />
-            <span v-if="searchText" class="delete-search" @click="searchText = ''">⨉</span>
+            <ClearButton v-if="searchText" @clear="searchText = ''" />
         </div>
-        <button id="search-btn" class="input btn mx-1 h-10" @click="onSearchClick">
-            <div class="i-fa6-solid:magnifying-glass"></div>
+        <button
+            id="search-btn"
+            class="mx-1 hidden h-10 w-auto cursor-pointer rounded-sm bg-gray-300 px-2.5 py-2 text-gray-600 hover:bg-gray-500 hover:text-white focus:shadow-red-400 focus:outline-2 focus:outline-red-500 max-[848px]:hidden max-md:px-2 min-[848px]:inline-block md:px-4 dark:bg-dark-400 dark:text-gray-400 dark:hover:bg-dark-300"
+            @click="onSearchClick"
+        >
+            <i-fa6-solid-magnifying-glass />
         </button>
         <!-- three vertical lines for toggling the hamburger menu on mobile -->
         <button class="mr-3 flex flex-col justify-end md:hidden" @click="showTopNav = !showTopNav">
-            <span class="line"></span>
-            <span class="line"></span>
-            <span class="line"></span>
+            <span class="my-[0.1125rem] rounded-xl bg-dark-900 px-2.5 py-px dark:bg-white"></span>
+            <span class="my-[0.1125rem] rounded-xl bg-dark-900 px-2.5 py-px dark:bg-white"></span>
+            <span class="my-[0.1125rem] rounded-xl bg-dark-900 px-2.5 py-px dark:bg-white"></span>
         </button>
         <!-- navigation bar for large screen devices -->
-        <ul class="md:text-1xl hidden list-none md:(flex flex flex-1 justify-end children:pl-3)">
+        <ul class="hidden list-none *:pl-3 md:flex md:flex-1 md:justify-end">
             <li v-if="shouldShowTrending">
-                <router-link v-t="'titles.trending'" to="/trending" class="nav-link" />
+                <router-link
+                    v-t="'titles.trending'"
+                    to="/trending"
+                    class="hover:text-red-500 dark:hover:text-red-400"
+                />
             </li>
             <li>
-                <router-link v-t="'titles.preferences'" to="/preferences" class="nav-link" />
+                <router-link
+                    v-t="'titles.preferences'"
+                    to="/preferences"
+                    class="hover:text-red-500 dark:hover:text-red-400"
+                />
             </li>
             <li v-if="shouldShowLogin">
-                <router-link v-t="'titles.login'" to="/login" class="nav-link" />
+                <router-link v-t="'titles.login'" to="/login" class="hover:text-red-500 dark:hover:text-red-400" />
             </li>
             <li v-if="shouldShowRegister">
-                <router-link v-t="'titles.register'" to="/register" class="nav-link" />
+                <router-link
+                    v-t="'titles.register'"
+                    to="/register"
+                    class="hover:text-red-500 dark:hover:text-red-400"
+                />
             </li>
             <li v-if="shouldShowHistory">
-                <router-link v-t="'titles.history'" to="/history" class="nav-link" />
+                <router-link v-t="'titles.history'" to="/history" class="hover:text-red-500 dark:hover:text-red-400" />
             </li>
             <li>
-                <router-link v-t="'titles.playlists'" to="/playlists" class="nav-link" />
+                <router-link
+                    v-t="'titles.playlists'"
+                    to="/playlists"
+                    class="hover:text-red-500 dark:hover:text-red-400"
+                />
             </li>
             <li v-if="!shouldShowTrending">
-                <router-link v-t="'titles.feed'" to="/feed" class="nav-link" />
+                <router-link v-t="'titles.feed'" to="/feed" class="hover:text-red-500 dark:hover:text-red-400" />
             </li>
         </ul>
     </nav>
     <!-- navigation bar for mobile devices -->
     <div
         v-if="showTopNav"
-        class="mobile-nav mb-4 flex flex-col children:(w-full flex items-center gap-1 border-b border-dark-100 p-1)"
+        class="mb-4 flex flex-col *:flex *:w-full *:items-center *:gap-1 *:border-b *:border-dark-100 *:p-1"
     >
         <router-link v-if="shouldShowTrending" to="/trending">
-            <div class="i-fa6-solid:fire"></div>
+            <i-fa6-solid-fire />
             <i18n-t keypath="titles.trending"></i18n-t>
         </router-link>
         <router-link to="/preferences">
-            <div class="i-fa6-solid:gear"></div>
+            <i-fa6-solid-gear />
             <i18n-t keypath="titles.preferences"></i18n-t>
         </router-link>
         <router-link v-if="shouldShowLogin" to="/login">
-            <div class="i-fa6-solid:user"></div>
+            <i-fa6-solid-user />
             <i18n-t keypath="titles.login"></i18n-t>
         </router-link>
         <router-link v-if="shouldShowLogin" to="/register">
-            <div class="i-fa6-solid:user-plus"></div>
+            <i-fa6-solid-user-plus />
             <i18n-t keypath="titles.register"></i18n-t>
         </router-link>
         <router-link v-if="shouldShowHistory" to="/history">
-            <div class="i-fa6-solid:clock-rotate-left"></div>
+            <i-fa6-solid-clock-rotate-left />
             <i18n-t keypath="titles.history"></i18n-t>
         </router-link>
         <router-link to="/playlists">
-            <div class="i-fa6-solid:list"></div>
+            <i-fa6-solid-list />
             <i18n-t keypath="titles.playlists"></i18n-t>
         </router-link>
         <router-link v-if="!shouldShowTrending" to="/feed">
-            <div class="i-fa6-solid:play"></div>
+            <i-fa6-solid-play />
             <i18n-t keypath="titles.feed"></i18n-t>
         </router-link>
     </div>
     <!-- search suggestions for mobile devices -->
-    <div class="search-container mb-2 w-full md:hidden">
+    <div class="relative mb-2 inline-flex w-full items-center md:hidden">
         <input
             v-model="searchText"
-            class="input h-10 w-full"
+            class="h-10 w-full rounded-md bg-gray-300 px-2.5 text-gray-600 focus:shadow-red-400 focus:outline-2 focus:outline-red-500 dark:bg-dark-400 dark:text-gray-400"
             type="text"
             role="search"
             :title="$t('actions.search')"
@@ -109,7 +129,7 @@
             @focus="onInputFocus"
             @blur="onInputBlur"
         />
-        <span v-if="searchText" class="delete-search" @click="searchText = ''">⨉</span>
+        <ClearButton v-if="searchText" @clear="searchText = ''" />
     </div>
     <SearchSuggestions
         v-show="(searchText || showSearchHistory) && suggestionsVisible"
@@ -119,139 +139,119 @@
     />
 </template>
 
-<script>
+<script setup>
+import { ref, computed, watch, onMounted } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import SearchSuggestions from "./SearchSuggestions.vue";
+import ClearButton from "./ui/ClearButton.vue";
 import hotkeys from "hotkeys-js";
-export default {
-    components: {
-        SearchSuggestions,
-    },
-    data() {
-        return {
-            searchText: "",
-            suggestionsVisible: false,
-            showTopNav: false,
-            homePagePath: import.meta.env.BASE_URL,
-            registrationDisabled: false,
-        };
-    },
-    computed: {
-        shouldShowLogin(_this) {
-            return _this.getAuthToken() == null;
-        },
-        shouldShowRegister(_this) {
-            return _this.registrationDisabled == false ? _this.shouldShowLogin : false;
-        },
-        shouldShowHistory(_this) {
-            return _this.getPreferenceBoolean("watchHistory", false);
-        },
-        shouldShowTrending(_this) {
-            return _this.getPreferenceString("homepage", "trending") != "trending";
-        },
-        showSearchHistory(_this) {
-            return _this.getPreferenceBoolean("searchHistory", false) && localStorage.getItem("search_history");
-        },
-    },
-    watch: {
-        $route() {
-            this.updateSearchTextFromURLSearchParams();
-        },
-    },
-    mounted() {
-        this.fetchAuthConfig();
-        this.updateSearchTextFromURLSearchParams();
-        this.focusOnSearchBar();
-        this.homePagePath = this.getHomePage(this);
-    },
-    methods: {
-        updateSearchTextFromURLSearchParams() {
-            const query = new URLSearchParams(window.location.search).get("search_query");
-            if (query) this.onSearchTextChange(query);
-        },
-        // focus on search bar when Ctrl+k is pressed
-        focusOnSearchBar() {
-            hotkeys("ctrl+k", event => {
-                event.preventDefault();
-                this.$refs.videoSearch.focus();
-            });
-        },
-        onKeyUp(e) {
-            if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-                e.preventDefault();
-            }
-            this.$refs.searchSuggestions.onKeyUp(e);
-        },
-        onKeyPress(e) {
-            if (e.key === "Enter") {
-                this.submitSearch(e);
-            }
-        },
-        onInputFocus() {
-            if (this.showSearchHistory) this.$refs.searchSuggestions.refreshSuggestions();
-            this.suggestionsVisible = true;
-        },
-        onInputBlur() {
-            // the search suggestions will be hidden after some seconds
-            // otherwise anchor links won't work!
-            setTimeout(() => (this.suggestionsVisible = false), 200);
-        },
-        onSearchTextChange(searchText) {
-            this.searchText = searchText;
-        },
-        async fetchAuthConfig() {
-            this.fetchJson(this.authApiUrl() + "/config").then(config => {
-                this.registrationDisabled = config?.registrationDisabled === true;
-            });
-        },
-        onSearchClick(e) {
-            this.submitSearch(e);
-        },
-        submitSearch(e) {
-            e.target.blur();
-            if (this.searchText) {
-                this.$router.push({
-                    name: "SearchResults",
-                    query: { search_query: this.searchText },
-                });
-            } else {
-                this.$router.push("/");
-            }
-            return;
-        },
-    },
-};
-</script>
+import { fetchJson, authApiUrl, getAuthToken } from "@/composables/useApi.js";
+import { getPreferenceBoolean, getPreferenceString } from "@/composables/usePreferences.js";
 
-<style>
-.search-container {
-    @apply relative inline-flex items-center;
-}
-.delete-search {
-    @apply absolute right-3 cursor-pointer rounded-full bg-[#ccc] w-4 h-4 text-center text-black opacity-50 hover:(opacity-70) text-size-[10px];
-}
-.mobile-nav div {
-    @apply mx-1;
+const router = useRouter();
+const route = useRoute();
+
+const videoSearch = ref(null);
+const searchSuggestions = ref(null);
+
+const searchText = ref("");
+const suggestionsVisible = ref(false);
+const showTopNav = ref(false);
+const registrationDisabled = ref(false);
+
+const shouldShowLogin = computed(() => {
+    return getAuthToken() == null;
+});
+
+const shouldShowRegister = computed(() => {
+    return registrationDisabled.value == false ? shouldShowLogin.value : false;
+});
+
+const shouldShowHistory = computed(() => {
+    return getPreferenceBoolean("watchHistory", false);
+});
+
+const shouldShowTrending = computed(() => {
+    return getPreferenceString("homepage", "trending") != "trending";
+});
+
+const showSearchHistory = computed(() => {
+    return getPreferenceBoolean("searchHistory", false) && localStorage.getItem("search_history");
+});
+
+watch(
+    () => route.fullPath,
+    () => {
+        updateSearchTextFromURLSearchParams();
+    },
+);
+
+function updateSearchTextFromURLSearchParams() {
+    const query = new URLSearchParams(window.location.search).get("search_query");
+    if (query) onSearchTextChange(query);
 }
 
-#search-btn:hover {
-    @apply bg-red-400;
+function focusOnSearchBar() {
+    hotkeys("ctrl+k", event => {
+        event.preventDefault();
+        videoSearch.value.focus();
+    });
 }
 
-.dark #search-btn:hover {
-    @apply bg-dark-100;
+function onKeyUp(e) {
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+    }
+    searchSuggestions.value.onKeyUp(e);
 }
 
-.nav-link {
-    @apply hover:text-red-500;
-}
-
-.dark .nav-link {
-    @apply hover:text-red-400;
-}
-
-@media screen and (max-width: 848px) {
-    #search-btn {
-        display: none;
+function onKeyPress(e) {
+    if (e.key === "Enter") {
+        submitSearch(e);
     }
 }
-</style>
+
+function onInputFocus() {
+    if (showSearchHistory.value) searchSuggestions.value.refreshSuggestions();
+    suggestionsVisible.value = true;
+}
+
+function onInputBlur() {
+    setTimeout(() => (suggestionsVisible.value = false), 200);
+}
+
+function onSearchTextChange(text) {
+    searchText.value = text;
+}
+
+async function fetchAuthConfig() {
+    fetchJson(authApiUrl() + "/config").then(config => {
+        registrationDisabled.value = config?.registrationDisabled === true;
+    });
+}
+
+function onSearchClick(e) {
+    submitSearch(e);
+}
+
+function submitSearch(e) {
+    e.target.blur();
+    if (searchText.value) {
+        router.push({
+            name: "SearchResults",
+            query: { search_query: searchText.value },
+        });
+    } else {
+        router.push("/");
+    }
+    return;
+}
+
+onMounted(() => {
+    fetchAuthConfig();
+    updateSearchTextFromURLSearchParams();
+    focusOnSearchBar();
+});
+</script>
+
+<style></style>

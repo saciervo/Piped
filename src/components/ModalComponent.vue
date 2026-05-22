@@ -1,58 +1,32 @@
 <template>
-    <div class="modal">
-        <div @click="handleClick">
-            <div class="modal-container">
-                <button @click="$emit('close')"><i class="i-fa6-solid:xmark" /></button>
+    <DialogRoot :open="true" @update:open="onOpenChange">
+        <DialogPortal>
+            <DialogOverlay class="fixed inset-0 z-50 bg-gray-500/80 transition-opacity dark:bg-dark-900/80" />
+            <DialogContent
+                class="fixed top-1/2 left-1/2 z-50 w-min min-w-[20vw] -translate-1/2 rounded-xl bg-white p-5 text-black focus:outline-none dark:bg-dark-700 dark:text-white"
+            >
+                <DialogClose as-child>
+                    <button
+                        type="button"
+                        class="absolute top-1 right-2.5 text-gray-700 hover:text-black dark:text-gray-300 dark:hover:text-white"
+                    >
+                        <i-fa6-solid-xmark />
+                    </button>
+                </DialogClose>
                 <slot></slot>
-            </div>
-        </div>
-    </div>
+            </DialogContent>
+        </DialogPortal>
+    </DialogRoot>
 </template>
 
-<script>
-export default {
-    emits: ["close"],
-    mounted() {
-        window.addEventListener("keydown", this.handleKeyDown);
-    },
-    unmounted() {
-        window.removeEventListener("keydown", this.handleKeyDown);
-    },
-    methods: {
-        handleKeyDown(event) {
-            if (event.code === "Escape") {
-                this.$emit("close");
-            } else return;
-            event.preventDefault();
-        },
-        handleClick(event) {
-            if (event.target !== event.currentTarget) return;
-            this.$emit("close");
-        },
-    },
-};
+<script setup>
+import { DialogClose, DialogContent, DialogOverlay, DialogPortal, DialogRoot } from "reka-ui";
+
+const emit = defineEmits(["close"]);
+
+function onOpenChange(open) {
+    if (!open) {
+        emit("close");
+    }
+}
 </script>
-
-<style scoped>
-.modal {
-    @apply fixed z-50 top-0 left-0 w-full h-full bg-gray bg-opacity-80 transition-opacity table;
-}
-.dark .modal {
-    @apply bg-dark-900 bg-opacity-80;
-}
-
-.modal > div {
-    @apply table-cell align-middle;
-}
-
-.modal-container {
-    @apply w-min m-auto bg-white p-5 rounded-xl min-w-[20vw] relative;
-}
-.dark .modal-container {
-    @apply bg-dark-700;
-}
-
-.modal-container > button {
-    @apply absolute right-2.5 top-1;
-}
-</style>
